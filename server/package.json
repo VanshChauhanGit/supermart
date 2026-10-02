@@ -1,0 +1,22 @@
+{
+  "name": "supermart-server",
+  "version": "1.0.0",
+  "description": "Supermart POS, Kiryana Udhar Book & Delivery REST API Server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "seed:admin": "node scripts/seedAdmin.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.11.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.4.1",
+    "multer": "^2.4.0",
+    "socket.io": "^4.8.4"
+  }
+}

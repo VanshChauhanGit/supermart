@@ -1,0 +1,101 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ocean-water: #CAE8E8;
+  --brilliant-blue: #28469E;
+  --bg-main: #F4F8F8;
+  --bg-surface: #FFFFFF;
+  --border-color: #E2E8F0;
+  --text-dark: #0F172A;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #F4F8F8;
+  background-image: 
+    radial-gradient(circle at 10% 10%, rgba(202, 232, 232, 0.4) 0%, transparent 50%),
+    radial-gradient(circle at 90% 90%, rgba(40, 70, 158, 0.06) 0%, transparent 50%);
+  color: #0F172A;
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Outfit', sans-serif;
+  letter-spacing: -0.02em;
+  color: #0F172A;
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-white border border-slate-200/80 rounded-2xl shadow-sm transition-all duration-200 hover:shadow-md hover:border-brilliant/20;
+  }
+  .input-field {
+    @apply w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm outline-none transition-all duration-200 focus:bg-white focus:border-brilliant focus:ring-2 focus:ring-brilliant/15 placeholder:text-slate-400;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 outline-none border-none cursor-pointer;
+  }
+  .btn-primary {
+    @apply bg-[#28469E] text-white shadow-md hover:bg-[#1E367D] hover:-translate-y-0.5 hover:shadow-blue-glow;
+  }
+  .btn-ocean {
+    @apply bg-[#CAE8E8] text-[#1E367D] font-bold shadow-sm hover:bg-[#b8e2e2] hover:-translate-y-0.5;
+  }
+  .btn-whatsapp {
+    @apply bg-[#25D366] text-white font-bold hover:bg-[#20bd5a] hover:-translate-y-0.5 shadow-sm;
+  }
+  .btn-secondary {
+    @apply bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200/80 hover:text-slate-900;
+  }
+  .btn-danger {
+    @apply bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-600 hover:text-white;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider;
+  }
+  .badge-ocean {
+    @apply bg-[#CAE8E8]/60 text-[#1E367D] border border-[#CAE8E8];
+  }
+  .badge-blue {
+    @apply bg-blue-50 text-blue-700 border border-blue-200;
+  }
+  .badge-emerald {
+    @apply bg-emerald-50 text-emerald-700 border border-emerald-200;
+  }
+  .badge-amber {
+    @apply bg-amber-50 text-amber-700 border border-amber-200;
+  }
+  .badge-rose {
+    @apply bg-rose-50 text-rose-700 border border-rose-200;
+  }
+}
+
+/* Custom Thermal Print Media Styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #thermal-receipt-modal, #thermal-receipt-modal * {
+    visibility: visible;
+  }
+  #thermal-receipt-modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    background: white;
+    color: black;
+    padding: 10px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
