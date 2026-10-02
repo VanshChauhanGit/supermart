@@ -80,10 +80,16 @@ if (require('fs').existsSync(distPath)) {
   });
 }
 
-server.listen(PORT, () => {
-  console.log(`====================================================`);
-  console.log(`🚀 Supermart Full-Stack Server running on port ${PORT}`);
-  console.log(`🔌 Socket.io enabled for real-time order tracking`);
-  console.log(`🛒 POS Billing, MongoDB, Udhar Ledger & Delivery Ready`);
-  console.log(`====================================================`);
-});
+// Only listen if not running on Vercel Serverless
+if (process.env.NODE_ENV !== 'production' || process.env.VERCEL !== '1') {
+  server.listen(PORT, () => {
+    console.log(`====================================================`);
+    console.log(`🚀 Supermart Full-Stack Server running on port ${PORT}`);
+    console.log(`🔌 Socket.io enabled for real-time order tracking`);
+    console.log(`🛒 POS Billing, MongoDB, Udhar Ledger & Delivery Ready`);
+    console.log(`====================================================`);
+  });
+}
+
+// Export for Vercel Serverless Functions
+module.exports = app;
