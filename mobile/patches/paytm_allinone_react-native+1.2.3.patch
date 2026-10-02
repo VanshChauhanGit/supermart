@@ -1,0 +1,27 @@
+diff --git a/node_modules/paytm_allinone_react-native/android/src/main/java/com/arnpaytmallinone/AllInOneSDKManagerModule.kt b/node_modules/paytm_allinone_react-native/android/src/main/java/com/arnpaytmallinone/AllInOneSDKManagerModule.kt
+index 8b5de1b..7b4e28a 100644
+--- a/node_modules/paytm_allinone_react-native/android/src/main/java/com/arnpaytmallinone/AllInOneSDKManagerModule.kt
++++ b/node_modules/paytm_allinone_react-native/android/src/main/java/com/arnpaytmallinone/AllInOneSDKManagerModule.kt
+@@ -109,11 +109,11 @@ class AllInOneSDKManagerModule(reactContext: ReactApplicationContext) : ReactCon
+     }
+ 
+     transactionManager.setShowPaymentUrl(host + "theia/api/v1/showPaymentPage")
+-    transactionManager.startTransaction(Objects.requireNonNull(currentActivity), REQ_CODE)
++    transactionManager.startTransaction(Objects.requireNonNull(getCurrentActivity()), REQ_CODE)
+   }
+ 
+   override
+-  fun onActivityResult(activity: Activity?, requestCode: Int, resultCode: Int, data: Intent?) {
++  fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
+     if (requestCode == REQ_CODE) {
+       if (data != null) {
+         val message: String = data.getStringExtra("nativeSdkForMerchantMessage") ?: ""
+@@ -127,7 +127,7 @@ class AllInOneSDKManagerModule(reactContext: ReactApplicationContext) : ReactCon
+   }
+ 
+   override
+-  fun onNewIntent(intent: Intent?) {}
++  fun onNewIntent(intent: Intent) {}
+ 
+ 
+   private fun handleResponse(response: String, errorMsg: String) {
