@@ -70,6 +70,13 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ONLINE',
+    system: 'Supermart Engine',
+  })
+})
+
 // Serve frontend build static files in production if dist exists
 const distPath = path.join(__dirname, '../web/dist');
 if (require('fs').existsSync(distPath)) {
