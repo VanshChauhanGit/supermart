@@ -1,253 +1,191 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, Eye, EyeOff, ShieldCheck, LogIn, AlertCircle, ShoppingBag, Phone, UserCheck } from 'lucide-react';
+import { 
+  Lock, User, Eye, EyeOff, ShieldCheck, LogIn, AlertCircle, 
+  Store, KeyRound, CheckCircle2, ShieldAlert 
+} from 'lucide-react';
 
 export default function LoginPage({ onLoginSuccess }) {
-  const [activeTab, setActiveTab] = useState('ADMIN'); // 'ADMIN' | 'CUSTOMER'
-
-  // Admin state
-  const [username, setUsername] = useState('admin');
+  const [identifier, setIdentifier] = useState('admin');
   const [password, setPassword] = useState('supermart123');
   const [showPassword, setShowPassword] = useState(false);
-
-  // Customer state
-  const [custName, setCustName] = useState('Vansh Chauhan');
-  const [custPhone, setCustPhone] = useState('9876543210');
-  const [custFatherName, setCustFatherName] = useState('Rajesh Chauhan');
-
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const navigate = useNavigate();
 
-  const handleAdminSubmit = async (e) => {
+  const handleOwnerSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     setIsSubmitting(true);
 
     try {
-      const res = await fetch('/api/v1/auth/login', {
+      // Map to dedicated Store Owner Login API
+      const res = await fetch('/api/v1/auth/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        localStorage.setItem('supermart_admin_user', JSON.stringify(data.data));
-        onLoginSuccess(data.data);
-        navigate('/pos');
-      } else {
-        setErrorMsg(data.message || 'Invalid Username or Password');
-      }
-    } catch (e) {
-      setErrorMsg('Connection error: ' + e.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleCustomerSubmit = async (e) => {
-    e.preventDefault();
-    setErrorMsg('');
-    setIsSubmitting(true);
-
-    try {
-      const res = await fetch('/api/v1/customers/login-register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: custName,
-          phone: custPhone,
-          fatherName: custFatherName
+        body: JSON.stringify({ 
+          username: identifier.trim(),
+          mobile: identifier.trim(),
+          password: password.trim() 
         })
       });
+
       const data = await res.json();
 
-      if (data.success) {
-        localStorage.setItem('supermart_customer_user', JSON.stringify(data.data));
-        // Redirect to storefront page
-        navigate('/storefront');
+      if (data.success && data.data) {
+        localStorage.setItem('supermart_admin_user', JSON.stringify(data.data));
+        if (data.token) {
+          localStorage.setItem('supermart_admin_token', data.token);
+        }
+        if (onLoginSuccess) {
+          onLoginSuccess(data.data);
+        }
+        navigate('/dashboard');
       } else {
-        setErrorMsg(data.message || 'Failed to authenticate customer session');
+        setErrorMsg(data.message || 'Invalid Store Owner credentials');
       }
     } catch (e) {
-      const fallbackUser = { name: custName, phone: custPhone, fatherName: custFatherName, creditBalance: 0 };
-      localStorage.setItem('supermart_customer_user', JSON.stringify(fallbackUser));
-      navigate('/storefront');
+      // Fallback network attempt
+      try {
+        const fallbackRes = await fetch('/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: identifier.trim(), password: password.trim() })
+        });
+        const fallbackData = await fallbackRes.json();
+        if (fallbackData.success && fallbackData.data) {
+          localStorage.setItem('supermart_admin_user', JSON.stringify(fallbackData.data));
+          if (onLoginSuccess) onLoginSuccess(fallbackData.data);
+          navigate('/dashboard');
+          return;
+        }
+      } catch (err) {}
+
+      setErrorMsg('Connection failed. Please ensure the backend server is running.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F8F8] flex items-center justify-center p-5 relative overflow-hidden">
-      {/* Soft Background Accents */}
-      <div className="absolute top-12 left-12 w-72 h-72 rounded-full bg-[#CAE8E8]/60 blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-12 right-12 w-96 h-96 rounded-full bg-[#28469E]/10 blur-3xl pointer-events-none"></div>
+    <div className="min-h-screen bg-[#F8FAFF] flex items-center justify-center p-5 relative overflow-hidden font-sans">
+      {/* Background Decorative Gradients */}
+      <div className="absolute top-10 left-10 w-80 h-80 rounded-full bg-[#CAE8E8]/40 blur-3xl pointer-events-none"></div>
+      <div className="absolute bottom-10 right-10 w-96 h-96 rounded-full bg-[#1E3A8A]/10 blur-3xl pointer-events-none"></div>
 
-      <div className="w-full max-w-md glass-panel p-0 overflow-hidden shadow-2xl border border-slate-200 z-10 rounded-3xl">
-        {/* Header */}
-        <div className="bg-[#28469E] p-7 text-center border-b border-[#CAE8E8]/30">
-          <div className="w-16 h-16 rounded-2xl bg-[#CAE8E8] flex items-center justify-center text-[#28469E] mx-auto mb-3 shadow-md border-2 border-white/40">
-            <ShoppingBag size={34} />
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden z-10 transition-all">
+        
+        {/* Header Branding */}
+        <div className="bg-[#1E3A8A] p-8 text-center text-white relative">
+          <div className="w-16 h-16 rounded-2xl bg-white/10 border-2 border-white/20 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-black/10">
+            <ShieldCheck size={36} className="text-[#93C5FD]" />
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tight">SUPERMART</h1>
-          <p className="text-xs text-[#CAE8E8] mt-1 font-semibold uppercase tracking-wider">Enterprise Kiryana POS & Udhar System</p>
+          <span className="text-[10px] font-black uppercase tracking-widest text-[#93C5FD] bg-white/10 px-3 py-1 rounded-full border border-white/15 inline-block mb-2">
+            Store Owner Portal
+          </span>
+          <h1 className="text-2xl font-black tracking-tight text-white">SUPERMART ADMIN</h1>
+          <p className="text-xs text-blue-200 mt-1 font-medium">
+            Kiryana Billing, Inventory & Digital Udhar Ledger
+          </p>
         </div>
 
-        {/* Tab Selector Pill Bar */}
-        <div className="bg-slate-100 p-1.5 flex gap-1 border-b border-slate-200">
-          <button
-            type="button"
-            onClick={() => { setActiveTab('ADMIN'); setErrorMsg(''); }}
-            className={`flex-1 py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 transition-all ${
-              activeTab === 'ADMIN' 
-                ? 'bg-[#28469E] text-white shadow-sm' 
-                : 'text-slate-600 hover:bg-slate-200/80'
-            }`}
-          >
-            <ShieldCheck size={16} /> Store Owner Admin
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setActiveTab('CUSTOMER'); setErrorMsg(''); }}
-            className={`flex-1 py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 transition-all ${
-              activeTab === 'CUSTOMER' 
-                ? 'bg-[#28469E] text-white shadow-sm' 
-                : 'text-slate-600 hover:bg-slate-200/80'
-            }`}
-          >
-            <UserCheck size={16} /> Customer Portal
-          </button>
+        {/* Security Notice Banner */}
+        <div className="bg-amber-50 border-b border-amber-200/70 px-5 py-2.5 flex items-center gap-2 text-[11px] text-amber-800 font-semibold">
+          <ShieldAlert size={15} className="text-amber-600 flex-shrink-0" />
+          <span>Restricted Portal: Access reserved strictly for Store Owners & Admins.</span>
         </div>
 
-        {/* Tab 1: ADMIN LOGIN FORM */}
-        {activeTab === 'ADMIN' ? (
-          <form onSubmit={handleAdminSubmit} className="p-7 bg-white">
-            {errorMsg && (
-              <div className="bg-rose-50 border border-rose-200 text-rose-600 p-3 rounded-xl text-xs mb-5 flex items-center gap-2 font-medium">
-                <AlertCircle size={18} /> {errorMsg}
-              </div>
+        {/* Login Form */}
+        <form onSubmit={handleOwnerSubmit} className="p-7 space-y-4">
+          {errorMsg && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-xl text-xs flex items-center gap-2 font-medium animate-in fade-in">
+              <AlertCircle size={18} className="flex-shrink-0 text-rose-600" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* Quick Credential Hint Card */}
+          <div className="bg-slate-50 border border-dashed border-slate-200 p-3 rounded-xl text-xs text-slate-600">
+            <div className="font-bold text-slate-800 flex items-center gap-1.5 mb-1">
+              <KeyRound size={14} className="text-[#1E3A8A]" />
+              <span>Owner Default Credentials:</span>
+            </div>
+            <div className="text-[11px] text-slate-500">
+              Username: <code className="font-bold text-[#1E3A8A] bg-white px-1.5 py-0.5 rounded border border-slate-200">admin</code>
+              {' '}&bull;{' '}
+              Password: <code className="font-bold text-[#1E3A8A] bg-white px-1.5 py-0.5 rounded border border-slate-200">supermart123</code>
+            </div>
+          </div>
+
+          {/* Username / Mobile Field */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Owner Username or Mobile:
+            </label>
+            <div className="relative">
+              <User size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="admin or 9999999999"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                className="input-field pl-11 text-sm font-semibold"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Password Field */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Owner Password:
+            </label>
+            <div className="relative">
+              <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="••••••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="input-field pl-11 pr-11 text-sm font-semibold"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1"
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full btn bg-[#1E3A8A] hover:bg-[#1E367D] text-white text-sm py-3.5 rounded-xl shadow-md shadow-[#1E3A8A]/25 font-black uppercase tracking-wider flex items-center justify-center gap-2 mt-2 transition-all hover:-translate-y-0.5"
+          >
+            {isSubmitting ? (
+              <span>Authenticating Owner...</span>
+            ) : (
+              <>
+                <LogIn size={18} />
+                <span>Enter Owner Portal</span>
+              </>
             )}
+          </button>
 
-            <div className="bg-slate-50 border border-dashed border-slate-200 p-3.5 rounded-xl text-xs text-slate-600 mb-5">
-              🔑 <strong>Admin Access Credentials:</strong><br />
-              Username: <code className="text-[#28469E] font-bold">admin</code> • Password: <code className="text-[#28469E] font-bold">supermart123</code>
-            </div>
+          {/* Footer Customer App Notice */}
+          <div className="pt-3 border-t border-slate-100 text-center">
+            <p className="text-[11px] text-slate-400 font-medium">
+              Are you a customer? Please use the <strong className="text-slate-700">Supermart Customer App</strong> on mobile to browse catalog & place home delivery orders.
+            </p>
+          </div>
+        </form>
 
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Admin Username:</label>
-              <div className="relative">
-                <User size={18} className="absolute left-3.5 top-3 text-slate-400" />
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="input-field pl-11 text-sm font-semibold"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="mb-6">
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Admin Password:</label>
-              <div className="relative">
-                <Lock size={18} className="absolute left-3.5 top-3 text-slate-400" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input-field pl-11 pr-11 text-sm font-semibold"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-700"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full btn btn-primary text-sm py-3.5 shadow-lg uppercase font-black tracking-wide"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Authenticating...' : <><LogIn size={18} /> Authenticate Admin Portal ➔</>}
-            </button>
-          </form>
-        ) : (
-
-          /* TAB 2: CUSTOMER LOGIN FORM */
-          <form onSubmit={handleCustomerSubmit} className="p-7 bg-white">
-            {errorMsg && (
-              <div className="bg-rose-50 border border-rose-200 text-rose-600 p-3 rounded-xl text-xs mb-5 flex items-center gap-2 font-medium">
-                <AlertCircle size={18} /> {errorMsg}
-              </div>
-            )}
-
-            <div className="bg-[#CAE8E8]/40 border border-[#96C7C7]/60 p-3 rounded-xl text-xs text-[#1E367D] mb-5 font-semibold">
-              🛍️ Shop Kiryana online & check your personal Udhar bill statement.
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Your Full Name:</label>
-              <div className="relative">
-                <User size={18} className="absolute left-3.5 top-3 text-slate-400" />
-                <input
-                  type="text"
-                  value={custName}
-                  onChange={(e) => setCustName(e.target.value)}
-                  placeholder="e.g. Vansh Chauhan"
-                  className="input-field pl-11 text-sm font-semibold"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Father's Name (Udhar Account):</label>
-              <div className="relative">
-                <UserCheck size={18} className="absolute left-3.5 top-3 text-slate-400" />
-                <input
-                  type="text"
-                  value={custFatherName}
-                  onChange={(e) => setCustFatherName(e.target.value)}
-                  placeholder="e.g. Rajesh Chauhan"
-                  className="input-field pl-11 text-sm font-semibold"
-                />
-              </div>
-            </div>
-
-            <div className="mb-6">
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">10-Digit Mobile Phone:</label>
-              <div className="relative">
-                <Phone size={18} className="absolute left-3.5 top-3 text-slate-400" />
-                <input
-                  type="tel"
-                  value={custPhone}
-                  onChange={(e) => setCustPhone(e.target.value)}
-                  placeholder="9876543210"
-                  className="input-field pl-11 text-sm font-semibold"
-                  required
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full btn btn-primary text-sm py-3.5 shadow-lg uppercase font-black tracking-wide"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Connecting...' : <><LogIn size={18} /> Enter Customer Storefront ➔</>}
-            </button>
-          </form>
-        )}
       </div>
     </div>
   );

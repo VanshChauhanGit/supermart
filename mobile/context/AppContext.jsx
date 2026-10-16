@@ -22,8 +22,8 @@ const getDefaultApiUrl = () => {
         return `http://${ip}:5050/api/v1`;
       }
     }
-  } catch (e) {}
-  return "http://localhost:5050/api/v1";
+  } catch (e) { }
+  return "https://supermart-ok26.onrender.com/api/v1";
 };
 
 // Persistent storage helper using AsyncStorage
@@ -38,12 +38,12 @@ const storage = {
   setItem: async (key, value) => {
     try {
       await AsyncStorage.setItem(key, value);
-    } catch (e) {}
+    } catch (e) { }
   },
   removeItem: async (key) => {
     try {
       await AsyncStorage.removeItem(key);
-    } catch (e) {}
+    } catch (e) { }
   },
 };
 
@@ -94,7 +94,7 @@ export function AppProvider({ children }) {
     const serverUrl = apiBaseUrl.replace('/api/v1', '');
     const newSocket = io(serverUrl);
     setSocket(newSocket);
-    
+
     return () => newSocket.disconnect();
   }, [apiBaseUrl]);
 
@@ -119,7 +119,7 @@ export function AppProvider({ children }) {
             await storage.removeItem("supermart_mobile_customer_token");
           }
         }
-      } catch (e) {}
+      } catch (e) { }
       setIsAuthLoaded(true);
     };
     loadSavedSessions();

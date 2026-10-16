@@ -30,21 +30,43 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET Sales Summary Stats (Today Revenue, Total Debt, Sales Count)
+// GET Sales Summary Stats (Today, Week, Month Revenue, Total Debt, Payment Breakdown)
 router.get('/summary', async (req, res) => {
   try {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
-    let sales;
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - 7);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const startOfMonth = new Date();
+    startOfMonth.setDate(startOfMonth.getDate() - 30);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    let todaySales = [];
+    let weekSales = [];
+    let monthSales = [];
     try {
-      sales = await Sale.find({ createdAt: { $gte: startOfDay } });
+      todaySales = await Sale.find({ createdAt: { $gte: startOfDay } });
+      weekSales = await Sale.find({ createdAt: { $gte: startOfWeek } });
+      monthSales = await Sale.find({ createdAt: { $gte: startOfMonth } });
     } catch (e) {
-      sales = memorySales.filter(s => new Date(s.createdAt) >= startOfDay);
+      todaySales = memorySales.filter(s => new Date(s.createdAt) >= startOfDay);
+      weekSales = memorySales.filter(s => new Date(s.createdAt) >= startOfWeek);
+      monthSales = memorySales.filter(s => new Date(s.createdAt) >= startOfMonth);
     }
 
-    const todayRevenue = sales.reduce((acc, s) => acc + s.totalAmount, 0);
-    const todayOrders = sales.length;
+    const todayRevenue = todaySales.reduce((acc, s) => acc + (s.totalAmount || 0), 0);
+    const todayOrders = todaySales.length;
+    const weekRevenue = weekSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0);
+    const monthRevenue = monthSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0);
+
+    const paymentBreakdown = {
+      CASH: todaySales.filter(s => s.paymentMode === 'CASH').reduce((acc, s) => acc + (s.totalAmount || 0), 0),
+      UPI: todaySales.filter(s => s.paymentMode === 'UPI').reduce((acc, s) => acc + (s.totalAmount || 0), 0),
+      UDHAR: todaySales.filter(s => s.paymentMode === 'UDHAR').reduce((acc, s) => acc + (s.totalAmount || 0), 0)
+    };
 
     let customers = [];
     try {
@@ -58,6 +80,9 @@ router.get('/summary', async (req, res) => {
       data: {
         todayRevenue,
         todayOrders,
+        weekRevenue,
+        monthRevenue,
+        paymentBreakdown,
         totalUdharDebt
       }
     });

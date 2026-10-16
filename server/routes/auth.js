@@ -193,20 +193,171 @@ router.post('/register', async (req, res) => {
 });
 
 /**
+ * @route   POST /api/v1/auth/admin/login
+ * @desc    Dedicated Store Owner / Admin Login (Only for Store Owner)
+ * @access  Public (Store Owners Only)
+ */
+router.post('/admin/login', async (req, res) => {
+  try {
+    const { username, mobile, phone, identifier: rawId, password } = req.body;
+    const identifier = (username || rawId || mobile || phone || '').trim();
+
+    if (!identifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Owner username or mobile number is required.'
+      });
+    }
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password is required.'
+      });
+    }
+
+    // 1. Check in Admin collection by mobile or name/username
+    let admin = null;
+    if (isDbConnected()) {
+      try {
+        const cleanMobile = normalizeMobile(identifier);
+        admin = await Admin.findOne({
+          $or: [
+            ...(cleanMobile ? [{ mobile: cleanMobile }] : []),
+            { name: new RegExp(`^${identifier}$`, 'i') }
+          ]
+        });
+      } catch (e) {
+        console.warn('[Admin DB Check]', e.message);
+      }
+    }
+
+    if (admin) {
+      const isValid = await admin.comparePassword(password);
+      if (!isValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Incorrect owner password. Access denied.'
+        });
+      }
+
+      const adminToken = generateToken({
+        id: admin._id,
+        mobile: admin.mobile,
+        name: admin.name,
+        role: 'SUPER_ADMIN'
+      });
+
+      return res.json({
+        success: true,
+        message: `Welcome back, Store Owner ${admin.name}!`,
+        token: adminToken,
+        data: {
+          _id: admin._id,
+          name: admin.name,
+          username: admin.name,
+          mobile: admin.mobile,
+          role: 'SUPER_ADMIN',
+          token: adminToken
+        }
+      });
+    }
+
+    // 2. Default owner credentials (admin / supermart123 or 9999999999 / supermart123)
+    const isDefaultAdmin = identifier.toLowerCase() === 'admin' || identifier === '9999999999';
+    if (isDefaultAdmin && password === 'supermart123') {
+      const adminToken = generateToken({
+        id: 'admin_owner_root',
+        name: 'Supermart Store Owner',
+        mobile: '9999999999',
+        role: 'SUPER_ADMIN'
+      });
+
+      return res.json({
+        success: true,
+        message: 'Welcome back, Supermart Store Owner!',
+        token: adminToken,
+        data: {
+          _id: 'admin_owner_root',
+          name: 'Supermart Store Owner',
+          username: 'admin',
+          mobile: '9999999999',
+          role: 'SUPER_ADMIN',
+          token: adminToken
+        }
+      });
+    }
+
+    // 3. Block customers or regular delivery users from owner portal
+    if (isDbConnected()) {
+      const cleanMobile = normalizeMobile(identifier);
+      if (cleanMobile) {
+        const isCustomer = await Customer.findOne({ phone: cleanMobile });
+        const isUser = await User.findOne({ mobile: cleanMobile });
+        if (isCustomer || isUser) {
+          return res.status(403).json({
+            success: false,
+            message: 'Access Denied: This portal is strictly reserved for Store Owners and Admins only.'
+          });
+        }
+      }
+    }
+
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid Store Owner credentials.'
+    });
+
+  } catch (err) {
+    console.error('[Admin Login Error]', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Owner login failed due to internal error.',
+      error: err.message
+    });
+  }
+});
+
+/**
  * @route   POST /api/v1/auth/login
- * @desc    Unified login — Admin, Customer, Delivery Partner all use mobile + password
+ * @desc    Unified login — Admin, Customer, Delivery Partner all use mobile/username + password
  * @access  Public
  */
 router.post('/login', async (req, res) => {
   try {
-    const { mobile, phone, password } = req.body;
+    const { username, mobile, phone, password } = req.body;
 
-    const targetMobile = normalizeMobile(mobile || phone);
+    // Handle admin username login
+    if (username && !mobile && !phone) {
+      if (username.toLowerCase() === 'admin' && password === 'supermart123') {
+        const adminToken = generateToken({
+          id: 'admin_owner_root',
+          name: 'Supermart Store Owner',
+          mobile: '9999999999',
+          role: 'SUPER_ADMIN'
+        });
+        return res.json({
+          success: true,
+          message: 'Welcome back, Supermart Store Owner!',
+          token: adminToken,
+          data: {
+            _id: 'admin_owner_root',
+            name: 'Supermart Store Owner',
+            username: 'admin',
+            mobile: '9999999999',
+            role: 'SUPER_ADMIN',
+            token: adminToken
+          }
+        });
+      }
+    }
+
+    const targetMobile = normalizeMobile(mobile || phone || username);
 
     if (!targetMobile || targetMobile.length !== 10) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide a valid 10-digit mobile number.'
+        message: 'Please provide a valid 10-digit mobile number or admin username.'
       });
     }
 

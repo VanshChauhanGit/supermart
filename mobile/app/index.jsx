@@ -500,6 +500,20 @@ export default function UnifiedAuthScreen() {
             </View>
           </View>
 
+          {/* ── Delivery Partner Direct Access Link ── */}
+          <View className="items-center px-4 mb-4">
+            <TouchableOpacity
+              onPress={() => router.push('/delivery')}
+              activeOpacity={0.8}
+              className="bg-white border border-slate-200 px-4 py-2.5 rounded-2xl flex-row items-center shadow-xs"
+            >
+              <Ionicons name="bicycle" size={16} color="#1E3A8A" style={{ marginRight: 6 }} />
+              <Text className="text-xs font-black text-[#1E3A8A]">
+                Delivery Partner Portal ➔
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           {/* ── Footer ── */}
           <View className="items-center py-2">
             <Text className="text-[11px] text-[#94A3B8] font-semibold">

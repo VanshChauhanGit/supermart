@@ -307,4 +307,123 @@ router.post('/preview-whatsapp-notice', (req, res) => {
   res.json({ success: true, data: result });
 });
 
+// GET Saved Addresses for a customer phone
+router.get('/:phone/addresses', async (req, res) => {
+  try {
+    const cleanPhone = req.params.phone.replace(/\D/g, '');
+    let addresses = [];
+    try {
+      const customer = await Customer.findOne({ phone: { $regex: cleanPhone } });
+      if (customer && Array.isArray(customer.savedAddresses)) {
+        addresses = customer.savedAddresses;
+      }
+    } catch (e) {
+      const memCust = memoryCustomers.find(c => c.phone && c.phone.replace(/\D/g, '').includes(cleanPhone));
+      if (memCust && memCust.savedAddresses) {
+        addresses = memCust.savedAddresses;
+      }
+    }
+    res.json({ success: true, data: addresses });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Add or Update Saved Address
+router.post('/:phone/addresses', async (req, res) => {
+  try {
+    const cleanPhone = req.params.phone.replace(/\D/g, '');
+    const { id, type, tag, address, landmark, pincode, latitude, longitude, isDefault } = req.body;
+
+    const newAddressObj = {
+      id: id || ('addr_' + Date.now()),
+      type: type || 'Home',
+      tag: tag || type || 'Home',
+      address,
+      landmark: landmark || '',
+      pincode: pincode || '',
+      latitude: latitude ? Number(latitude) : null,
+      longitude: longitude ? Number(longitude) : null,
+      isDefault: Boolean(isDefault)
+    };
+
+    let updatedAddresses = [];
+
+    try {
+      let customer = await Customer.findOne({ phone: { $regex: cleanPhone } });
+      if (!customer) {
+        customer = new Customer({
+          name: req.body.customerName || 'Customer',
+          phone: cleanPhone,
+          address: address || '',
+          savedAddresses: []
+        });
+      }
+      if (!customer.savedAddresses) customer.savedAddresses = [];
+      if (newAddressObj.isDefault) {
+        customer.savedAddresses.forEach(a => a.isDefault = false);
+      }
+      const existingIdx = customer.savedAddresses.findIndex(a => a.id === newAddressObj.id);
+      if (existingIdx > -1) {
+        customer.savedAddresses[existingIdx] = newAddressObj;
+      } else {
+        customer.savedAddresses.push(newAddressObj);
+      }
+      await customer.save();
+      updatedAddresses = customer.savedAddresses;
+    } catch (e) {
+      let memCust = memoryCustomers.find(c => c.phone && c.phone.replace(/\D/g, '').includes(cleanPhone));
+      if (!memCust) {
+        memCust = {
+          _id: 'cust_' + Date.now(),
+          name: req.body.customerName || 'Customer',
+          phone: cleanPhone,
+          savedAddresses: []
+        };
+        memoryCustomers.push(memCust);
+      }
+      if (!memCust.savedAddresses) memCust.savedAddresses = [];
+      const existingIdx = memCust.savedAddresses.findIndex(a => a.id === newAddressObj.id);
+      if (existingIdx > -1) {
+        memCust.savedAddresses[existingIdx] = newAddressObj;
+      } else {
+        memCust.savedAddresses.push(newAddressObj);
+      }
+      updatedAddresses = memCust.savedAddresses;
+    }
+
+    res.json({ success: true, message: 'Address saved successfully', data: updatedAddresses });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE Saved Address
+router.delete('/:phone/addresses/:addressId', async (req, res) => {
+  try {
+    const cleanPhone = req.params.phone.replace(/\D/g, '');
+    const { addressId } = req.params;
+
+    let updatedAddresses = [];
+    try {
+      let customer = await Customer.findOne({ phone: { $regex: cleanPhone } });
+      if (customer && customer.savedAddresses) {
+        customer.savedAddresses = customer.savedAddresses.filter(a => a.id !== addressId);
+        await customer.save();
+        updatedAddresses = customer.savedAddresses;
+      }
+    } catch (e) {
+      const memCust = memoryCustomers.find(c => c.phone && c.phone.replace(/\D/g, '').includes(cleanPhone));
+      if (memCust && memCust.savedAddresses) {
+        memCust.savedAddresses = memCust.savedAddresses.filter(a => a.id !== addressId);
+        updatedAddresses = memCust.savedAddresses;
+      }
+    }
+
+    res.json({ success: true, message: 'Address removed successfully', data: updatedAddresses });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

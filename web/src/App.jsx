@@ -4,12 +4,17 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import ProtectedAdminRoute from './components/ProtectedAdminRoute';
+import AdminOrderNotifier from './components/AdminOrderNotifier';
 
 import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
 import POSPage from './pages/POSPage';
 import UdharPage from './pages/UdharPage';
 import InventoryPage from './pages/InventoryPage';
 import DeliveryPage from './pages/DeliveryPage';
+import CategoriesPage from './pages/CategoriesPage';
+import OffersPage from './pages/OffersPage';
+import ProfilePage from './pages/ProfilePage';
 import StorefrontPage from './pages/StorefrontPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ApiDocsPage from './pages/ApiDocsPage';
@@ -99,27 +104,47 @@ function AppContent() {
         path="*"
         element={
           adminUser ? (
-            <div className="flex min-h-screen bg-dark-bg text-slate-100 font-sans">
+            <div className="flex min-h-screen bg-[#F8FAFF] text-slate-800 font-sans">
               <Sidebar adminUser={adminUser} onLogout={handleLogout} />
               
               <div className="flex-1 flex flex-col min-w-0">
-                <Header systemStats={systemStats} customers={customers} onRefresh={refreshAll} adminUser={adminUser} onLogout={handleLogout} />
+                <Header 
+                  systemStats={systemStats} 
+                  customers={customers} 
+                  onRefresh={refreshAll} 
+                  adminUser={adminUser} 
+                  onLogout={handleLogout} 
+                />
                 
                 <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
                   <Routes>
+                    {/* Home Store Dashboard (matching mobile tab 1) */}
                     <Route 
                       path="/" 
                       element={
                         <ProtectedAdminRoute adminUser={adminUser}>
-                          <POSPage
-                            products={products}
-                            customers={customers}
-                            onRefreshProducts={fetchProducts}
-                            onSaleComplete={handleSaleComplete}
+                          <DashboardPage 
+                            products={products} 
+                            customers={customers} 
+                            onRefresh={refreshAll} 
                           />
                         </ProtectedAdminRoute>
                       } 
                     />
+                    <Route 
+                      path="/dashboard" 
+                      element={
+                        <ProtectedAdminRoute adminUser={adminUser}>
+                          <DashboardPage 
+                            products={products} 
+                            customers={customers} 
+                            onRefresh={refreshAll} 
+                          />
+                        </ProtectedAdminRoute>
+                      } 
+                    />
+
+                    {/* POS Billing Desk */}
                     <Route 
                       path="/pos" 
                       element={
@@ -133,6 +158,8 @@ function AppContent() {
                         </ProtectedAdminRoute>
                       } 
                     />
+
+                    {/* Udhar Khata Ledger */}
                     <Route 
                       path="/udhar" 
                       element={
@@ -145,6 +172,8 @@ function AppContent() {
                         </ProtectedAdminRoute>
                       } 
                     />
+
+                    {/* Catalog & Stock Inventory */}
                     <Route 
                       path="/inventory" 
                       element={
@@ -156,6 +185,31 @@ function AppContent() {
                         </ProtectedAdminRoute>
                       } 
                     />
+
+                    {/* Category Management */}
+                    <Route 
+                      path="/categories" 
+                      element={
+                        <ProtectedAdminRoute adminUser={adminUser}>
+                          <CategoriesPage
+                            products={products}
+                            onRefreshProducts={fetchProducts}
+                          />
+                        </ProtectedAdminRoute>
+                      } 
+                    />
+
+                    {/* Offers & Coupons Management */}
+                    <Route 
+                      path="/offers" 
+                      element={
+                        <ProtectedAdminRoute adminUser={adminUser}>
+                          <OffersPage />
+                        </ProtectedAdminRoute>
+                      } 
+                    />
+
+                    {/* Delivery Orders Hub */}
                     <Route 
                       path="/delivery" 
                       element={
@@ -164,6 +218,29 @@ function AppContent() {
                         </ProtectedAdminRoute>
                       } 
                     />
+                    <Route 
+                      path="/orders" 
+                      element={
+                        <ProtectedAdminRoute adminUser={adminUser}>
+                          <DeliveryPage />
+                        </ProtectedAdminRoute>
+                      } 
+                    />
+
+                    {/* Store Profile & Settings */}
+                    <Route 
+                      path="/profile" 
+                      element={
+                        <ProtectedAdminRoute adminUser={adminUser}>
+                          <ProfilePage 
+                            adminUser={adminUser} 
+                            onLogout={handleLogout} 
+                          />
+                        </ProtectedAdminRoute>
+                      } 
+                    />
+
+                    {/* Customer Storefront & Mobile APIs */}
                     <Route 
                       path="/storefront" 
                       element={<StorefrontPage products={products} />} 
@@ -180,10 +257,14 @@ function AppContent() {
                       path="/api-docs" 
                       element={<ApiDocsPage />} 
                     />
-                    <Route path="*" element={<Navigate to="/pos" replace />} />
+
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
                   </Routes>
                 </main>
               </div>
+
+              {/* Real-time Incoming Order Alert Overlay with Audio Chime */}
+              <AdminOrderNotifier onOrderReceived={refreshAll} />
 
               {/* Shared Receipt & WhatsApp Modals */}
               <WhatsAppNoticeModal

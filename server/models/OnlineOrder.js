@@ -29,6 +29,23 @@ const onlineOrderSchema = new mongoose.Schema({
   },
   assignedDeliveryRider: { type: String, default: 'Unassigned' },
   riderPhone: { type: String, default: '' },
+  location: {
+    latitude: { type: Number, default: null },
+    longitude: { type: Number, default: null },
+    formattedAddress: { type: String, default: '' },
+    landmark: { type: String, default: '' }
+  },
+  deliveryOtp: { 
+    type: String, 
+    default: () => Math.floor(1000 + Math.random() * 9000).toString() 
+  },
+  estimatedDeliveryMinutes: { type: Number, default: 15 },
+  statusTimestamps: {
+    placedAt: { type: Date, default: Date.now },
+    acceptedAt: { type: Date, default: null },
+    dispatchedAt: { type: Date, default: null },
+    deliveredAt: { type: Date, default: null }
+  },
   notes: { type: String, default: '' }
 }, { timestamps: true });
 

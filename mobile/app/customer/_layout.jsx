@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs, Redirect } from 'expo-router';
-import { View, Text, Alert, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, ActivityIndicator, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../context/AppContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,7 +24,7 @@ function FloatingTabBar({ state, navigation }) {
         position: 'absolute',
         left: 0,
         right: 0,
-        bottom: Math.max(insets.bottom, 8) + 8,
+        bottom: Math.max(insets.bottom, 8),
         paddingHorizontal: 50,
       }}
     >
@@ -129,7 +129,7 @@ function FloatingTabBar({ state, navigation }) {
 }
 
 export default function CustomerTabsLayout() {
-  const { customerUser, logoutCustomer, isAuthLoaded } = useApp();
+  const { customerUser, isAuthLoaded } = useApp();
 
   if (!isAuthLoaded) {
     return (
@@ -140,21 +140,6 @@ export default function CustomerTabsLayout() {
   }
 
   if (!customerUser) return <Redirect href="/" />;
-
-  const handleLogoutCustomer = () => {
-    Alert.alert(
-      'Logout Customer Account',
-      `Are you sure you want to log out of ${customerUser?.name || 'your account'}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => { if (logoutCustomer) await logoutCustomer(); }
-        }
-      ]
-    );
-  };
 
   return (
     <Tabs
@@ -171,3 +156,4 @@ export default function CustomerTabsLayout() {
     </Tabs>
   );
 }
+

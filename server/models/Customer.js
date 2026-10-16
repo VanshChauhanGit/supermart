@@ -7,6 +7,19 @@ const customerSchema = new mongoose.Schema({
   phone: { type: String, required: true, index: true },
   password: { type: String, default: '' }, // bcrypt hash — optional for POS walk-in customers
   address: { type: String, default: '' },
+  savedAddresses: [
+    {
+      id: { type: String, default: () => 'addr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5) },
+      type: { type: String, enum: ['Home', 'Work', 'Other'], default: 'Home' },
+      tag: { type: String, default: 'Home' },
+      address: { type: String, required: true },
+      landmark: { type: String, default: '' },
+      pincode: { type: String, default: '' },
+      latitude: { type: Number, default: null },
+      longitude: { type: Number, default: null },
+      isDefault: { type: Boolean, default: false }
+    }
+  ],
   creditLimit: { type: Number, default: 5000 },
   creditBalance: { type: Number, default: 0 },
   totalPurchases: { type: Number, default: 0 },

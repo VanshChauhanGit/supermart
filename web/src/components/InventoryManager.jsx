@@ -12,6 +12,51 @@ export default function InventoryManager({ products, onRefreshProducts }) {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProdId, setEditingProdId] = useState(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleAdjustStock = async (item, delta) => {
+    const newQty = Math.max(0, (item.stockQty || 0) + delta);
+    try {
+      await fetch(`/api/v1/products/${item._id}/stock`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delta })
+      });
+      if (onRefreshProducts) onRefreshProducts();
+    } catch (e) {
+      console.error('Failed to adjust stock:', e);
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      const res = await fetch('/api/v1/upload', {
+        method: 'POST',
+        body: fd
+      });
+      const data = await res.json();
+      if (data.success && data.imageUrl) {
+        setFormData(prev => ({ ...prev, imageUrl: data.imageUrl }));
+      } else {
+        alert(data.message || 'Image upload failed. You can paste an image URL or choose a preset.');
+      }
+    } catch (err) {
+      alert('Upload error: ' + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const generateBarcode = () => {
+    const code = '890' + Math.floor(1000000000 + Math.random() * 9000000000);
+    setFormData(prev => ({ ...prev, barcode: code }));
+  };
 
   const sampleImages = [
     { label: 'Atta / Flours', url: 'https://images.unsplash.com/photo-1574316071802-0d684efa7bf5?auto=format&fit=crop&w=400&q=80' },
@@ -287,9 +332,27 @@ export default function InventoryManager({ products, onRefreshProducts }) {
                   <td className="py-3 px-3 text-right text-slate-400 line-through">₹{p.mrp}</td>
                   <td className="py-3 px-3 text-right font-extrabold text-[#28469E] text-base">₹{p.sellingPrice}</td>
                   <td className="py-3 px-3 text-center">
-                    <span className={`badge ${isLow ? 'badge-rose' : 'badge-emerald'}`}>
-                      {p.stockQty} {p.unit} {isLow && '⚠️'}
-                    </span>
+                    <div className="inline-flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                      <button
+                        onClick={() => handleAdjustStock(p, -1)}
+                        className="w-6 h-6 rounded-lg bg-white hover:bg-rose-50 hover:text-rose-600 text-slate-700 font-bold flex items-center justify-center text-xs shadow-xs border border-slate-200 transition-colors"
+                        title="Decrease Stock (-1)"
+                      >
+                        -
+                      </button>
+                      <span className={`px-2 py-0.5 rounded-lg text-xs font-black min-w-[3.5rem] text-center ${
+                        isLow ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-white text-slate-800'
+                      }`}>
+                        {p.stockQty} {p.unit}
+                      </span>
+                      <button
+                        onClick={() => handleAdjustStock(p, 1)}
+                        className="w-6 h-6 rounded-lg bg-white hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-bold flex items-center justify-center text-xs shadow-xs border border-slate-200 transition-colors"
+                        title="Increase Stock (+1)"
+                      >
+                        +
+                      </button>
+                    </div>
                   </td>
                   <td className="py-3 px-3 text-center">
                     <div className="inline-flex gap-2">
@@ -321,7 +384,7 @@ export default function InventoryManager({ products, onRefreshProducts }) {
               </label>
               
               <div className="flex gap-4 items-center">
-                <div className="w-20 h-20 rounded-xl bg-white overflow-hidden border border-slate-300 flex-shrink-0 shadow-sm">
+                <div className="w-20 h-24 rounded-xl bg-white overflow-hidden border border-slate-300 flex-shrink-0 shadow-sm aspect-[4/5]">
                   {formData.imageUrl ? (
                     <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" />
                   ) : (
@@ -330,14 +393,27 @@ export default function InventoryManager({ products, onRefreshProducts }) {
                 </div>
 
                 <div className="flex-1">
-                  <input
-                    type="url"
-                    placeholder="Enter Product Image URL..."
-                    value={formData.imageUrl}
-                    onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                    className="input-field text-xs mb-2"
-                    required
-                  />
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="url"
+                      placeholder="Enter Product Image URL..."
+                      value={formData.imageUrl}
+                      onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                      className="input-field text-xs flex-1"
+                      required
+                    />
+                    <label className="btn btn-secondary text-xs px-3 py-1 cursor-pointer whitespace-nowrap flex items-center gap-1.5 font-bold">
+                      <Upload size={14} />
+                      <span>{uploading ? 'Uploading...' : 'Upload Image'}</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handleFileUpload} 
+                        className="hidden" 
+                        disabled={uploading}
+                      />
+                    </label>
+                  </div>
                   <div className="text-[11px] text-slate-500 mb-1.5 font-semibold">Or click a sample preset image:</div>
                   <div className="flex flex-wrap gap-1.5">
                     {sampleImages.map((img, i) => (
@@ -357,12 +433,21 @@ export default function InventoryManager({ products, onRefreshProducts }) {
 
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div>
-                <label className="text-xs font-semibold text-slate-700">Barcode SKU:</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-semibold text-slate-700">Barcode SKU:</label>
+                  <button
+                    type="button"
+                    onClick={generateBarcode}
+                    className="text-[10px] text-[#28469E] font-bold hover:underline"
+                  >
+                    🎲 Generate New
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={formData.barcode}
                   onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                  className="input-field"
+                  className="input-field font-mono font-bold"
                   required
                 />
               </div>

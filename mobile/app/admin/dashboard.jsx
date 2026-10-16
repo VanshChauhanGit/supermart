@@ -20,7 +20,7 @@ const StatCard = ({ icon, label, value, valueColor = 'text-slate-900', iconBg, i
   </TouchableOpacity>
 );
 
-const ActionRow = ({ icon, iconBg, iconColor, title, subtitle, onPress }) => (
+const ActionRow = ({ icon, iconBg, iconColor, title, subtitle, onPress, badge }) => (
   <TouchableOpacity
     activeOpacity={0.8}
     onPress={onPress}
@@ -31,7 +31,14 @@ const ActionRow = ({ icon, iconBg, iconColor, title, subtitle, onPress }) => (
         <Ionicons name={icon} size={24} color={iconColor} />
       </View>
       <View className="flex-1">
-        <Text className="text-sm font-black text-slate-900 mb-0.5">{title}</Text>
+        <View className="flex-row items-center">
+          <Text className="text-sm font-black text-slate-900 mb-0.5">{title}</Text>
+          {badge && (
+            <View className="ml-2 bg-amber-100 rounded-full px-2 py-0.5">
+              <Text className="text-[9px] font-black text-amber-800 uppercase">{badge}</Text>
+            </View>
+          )}
+        </View>
         <Text className="text-[11px] font-medium text-slate-400">{subtitle}</Text>
       </View>
     </View>
@@ -42,43 +49,68 @@ const ActionRow = ({ icon, iconBg, iconColor, title, subtitle, onPress }) => (
 );
 
 export default function AdminDashboardScreen() {
-  const { apiBaseUrl, logoutAdmin } = useApp();
+  const { apiBaseUrl } = useApp();
+
+  const [salesTimeframe, setSalesTimeframe] = useState('TODAY'); // TODAY | WEEK | MONTH
 
   const [stats, setStats] = useState({
-    todaySales: 14850,
-    totalProducts: 48,
-    totalUdhar: 18500,
-    activeOrders: 5,
-    lowStockCount: 4
+    todayRevenue: 0,
+    todayOrders: 0,
+    weekRevenue: 0,
+    monthRevenue: 0,
+    paymentBreakdown: { CASH: 0, UPI: 0, UDHAR: 0 },
+    totalProducts: 0,
+    totalUdhar: 0,
+    activeOrders: 0,
+    lowStockCount: 0,
+    lowStockItems: []
   });
 
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchDashboardData = async () => {
     try {
-      const pRes = await fetch(`${apiBaseUrl}/products`);
-      const pData = await pRes.json();
-      const cRes = await fetch(`${apiBaseUrl}/customers`);
-      const cData = await cRes.json();
-      const oRes = await fetch(`${apiBaseUrl}/orders`);
-      const oData = await oRes.json();
+      const [salesRes, prodRes, custRes, ordRes] = await Promise.all([
+        fetch(`${apiBaseUrl}/sales/summary`).catch(() => null),
+        fetch(`${apiBaseUrl}/products`).catch(() => null),
+        fetch(`${apiBaseUrl}/customers`).catch(() => null),
+        fetch(`${apiBaseUrl}/orders`).catch(() => null),
+      ]);
 
-      let productsCount = pData.success ? pData.data.length : 48;
-      let lowStock = pData.success ? pData.data.filter(p => p.stockQty <= (p.reorderLevel || 5)).length : 4;
-      let totalMarketUdhar = cData.success ? cData.data.reduce((acc, c) => acc + (c.creditBalance || 0), 0) : 18500;
-      let pendingOrders = oData.success ? oData.data.filter(o => o.status !== 'DELIVERED').length : 5;
+      const salesData = salesRes ? await salesRes.json() : null;
+      const prodData = prodRes ? await prodRes.json() : null;
+      const custData = custRes ? await custRes.json() : null;
+      const ordData = ordRes ? await ordRes.json() : null;
+
+      const pList = prodData?.success ? prodData.data : [];
+      const lowStockList = pList.filter(p => p.stockQty <= (p.reorderLevel || 5));
+      const cList = custData?.success ? custData.data : [];
+      const oList = ordData?.success ? ordData.data : [];
+
+      const totalUdhar = salesData?.data?.totalUdharDebt ??
+        cList.reduce((acc, c) => acc + (c.creditBalance || 0), 0);
+      const pendingOrders = oList.filter(o => o.status !== 'DELIVERED' && o.status !== 'CANCELLED').length;
 
       setStats({
-        todaySales: 14850,
-        totalProducts: productsCount,
-        totalUdhar: totalMarketUdhar,
+        todayRevenue: salesData?.data?.todayRevenue || 0,
+        todayOrders: salesData?.data?.todayOrders || 0,
+        weekRevenue: salesData?.data?.weekRevenue || (salesData?.data?.todayRevenue || 0),
+        monthRevenue: salesData?.data?.monthRevenue || (salesData?.data?.todayRevenue || 0),
+        paymentBreakdown: salesData?.data?.paymentBreakdown || { CASH: 0, UPI: 0, UDHAR: 0 },
+        totalProducts: pList.length,
+        totalUdhar,
         activeOrders: pendingOrders,
-        lowStockCount: lowStock
+        lowStockCount: lowStockList.length,
+        lowStockItems: lowStockList
       });
-    } catch (e) {}
+    } catch (e) {
+      console.log('Error fetching dashboard metrics:', e);
+    }
   };
 
-  useEffect(() => { fetchDashboardData(); }, []);
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -86,9 +118,17 @@ export default function AdminDashboardScreen() {
     setRefreshing(false);
   };
 
-  const now = new Date();
-  const hour = now.getHours();
-  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+  const currentRevenue = salesTimeframe === 'TODAY'
+    ? stats.todayRevenue
+    : salesTimeframe === 'WEEK'
+      ? stats.weekRevenue
+      : stats.monthRevenue;
+
+  const currentRevenueLabel = salesTimeframe === 'TODAY'
+    ? "TODAY'S REVENUE"
+    : salesTimeframe === 'WEEK'
+      ? "LAST 7 DAYS REVENUE"
+      : "LAST 30 DAYS REVENUE";
 
   return (
     <SafeAreaView edges={['top']} className="flex-1 bg-[#F8FAFF]">
@@ -99,58 +139,203 @@ export default function AdminDashboardScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#28469E" />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        {/* <View className="flex-row justify-between items-start mb-6">
+        {/* Top Header */}
+        <View className="flex-row justify-between items-center mb-4">
           <View>
-            <Text className="text-xs font-bold text-slate-400 tracking-wide">{greeting}</Text>
-            <Text className="text-3xl font-black text-slate-900 mt-0.5">Store Dashboard</Text>
-            <Text className="text-xs text-slate-400 font-semibold mt-1">
-              Supermart POS · {now.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
-            </Text>
+            <Text className="text-xs font-bold text-slate-400 tracking-wide uppercase">Store Overview</Text>
+            <Text className="text-3xl font-black text-slate-900 mt-0.5">Admin Portal</Text>
           </View>
           <TouchableOpacity
-            onPress={() => { if (logoutAdmin) logoutAdmin(); }}
-            className="bg-red-50 rounded-2xl p-2.5 border border-red-100"
+            onPress={() => router.push('/admin/pos')}
+            className="bg-[#1E3A8A] rounded-2xl px-3.5 py-2.5 flex-row items-center shadow-md shadow-[#1E3A8A]/30"
           >
-            <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+            <Ionicons name="calculator" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text className="text-white text-xs font-black">POS Bill</Text>
           </TouchableOpacity>
-        </View> */}
+        </View>
 
-        {/* Hero Revenue Card */}
-        <View className="rounded-3xl mb-5 overflow-hidden shadow-xl shadow-[#1E3A8A]/30">
-          <View className="bg-[#1E3A8A] p-4">
-            <View className="flex-row justify-between items-center">
-              <View className="flex-1">
-                <Text className="text-[#93C5FD] text-[10px] font-bold uppercase tracking-widest mb-2">TODAY'S REVENUE</Text>
-                <Text className="text-white text-4xl font-semibold tracking-tight">₹{stats.todaySales.toLocaleString('en-IN')}</Text>
-                {/* <View className="flex-row items-center mt-2.5">
-                  <View className="w-2 h-2 rounded-full bg-green-400 mr-1.5" />
-                  <Text className="text-[#93C5FD] text-xs font-semibold">Live MongoDB · All POS channels</Text>
-                </View> */}
-              </View>
-              <View className="bg-white/10 rounded-2xl p-3 border border-white/15">
-                <Ionicons name="wallet-outline" size={24} color="#fff" />
-              </View>
+        {/* Hero Revenue Card with Timeframe Switch */}
+        <View className="rounded-3xl mb-4 overflow-hidden shadow-xl shadow-[#1E3A8A]/30 bg-[#1E3A8A] p-5">
+          <View className="flex-row justify-between items-center mb-3">
+            <Text className="text-[#93C5FD] text-[10px] font-bold uppercase tracking-widest">
+              {currentRevenueLabel}
+            </Text>
+            {/* Timeframe Selector */}
+            <View className="flex-row bg-white/10 rounded-xl p-0.5 border border-white/15">
+              {[
+                { id: 'TODAY', label: 'Today' },
+                { id: 'WEEK', label: '7D' },
+                { id: 'MONTH', label: '30D' }
+              ].map(t => (
+                <TouchableOpacity
+                  key={t.id}
+                  onPress={() => setSalesTimeframe(t.id)}
+                  className={`px-2 py-1 rounded-lg ${salesTimeframe === t.id ? 'bg-white' : ''}`}
+                >
+                  <Text className={`text-[10px] font-black ${salesTimeframe === t.id ? 'text-[#1E3A8A]' : 'text-blue-200'}`}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
+
+          <View className="flex-row justify-between items-center">
+            <View>
+              <Text className="text-white text-4xl font-black tracking-tight">
+                ₹{currentRevenue.toLocaleString('en-IN')}
+              </Text>
+              <Text className="text-[#93C5FD] text-xs font-semibold mt-1">
+                {salesTimeframe === 'TODAY' ? `${stats.todayOrders} sales billed today` : 'Live MongoDB Sales Engine'}
+              </Text>
+            </View>
+            <View className="bg-white/10 rounded-2xl p-3 border border-white/15">
+              <Ionicons name="wallet-outline" size={26} color="#fff" />
+            </View>
+          </View>
+
+          {/* Today Payment Breakdown Strip */}
+          {salesTimeframe === 'TODAY' && (
+            <View className="flex-row justify-between items-center border-t border-white/15 pt-3 mt-4">
+              <View className="flex-row items-center">
+                <View className="w-2 h-2 rounded-full bg-emerald-400 mr-1.5" />
+                <Text className="text-white/80 text-[11px] font-semibold">
+                  Cash: <Text className="text-white font-bold">₹{stats.paymentBreakdown.CASH || 0}</Text>
+                </Text>
+              </View>
+              <View className="flex-row items-center">
+                <View className="w-2 h-2 rounded-full bg-blue-300 mr-1.5" />
+                <Text className="text-white/80 text-[11px] font-semibold">
+                  UPI: <Text className="text-white font-bold">₹{stats.paymentBreakdown.UPI || 0}</Text>
+                </Text>
+              </View>
+              <View className="flex-row items-center">
+                <View className="w-2 h-2 rounded-full bg-amber-400 mr-1.5" />
+                <Text className="text-white/80 text-[11px] font-semibold">
+                  Udhar: <Text className="text-white font-bold">₹{stats.paymentBreakdown.UDHAR || 0}</Text>
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
+
+        {/* Morning Low Stock Summary Banner */}
+        {stats.lowStockCount > 0 && (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => router.push('/admin/inventory')}
+            className="bg-red-50 border border-red-200 rounded-2xl p-3.5 mb-4 flex-row items-center justify-between shadow-sm"
+          >
+            <View className="flex-row items-center flex-1 mr-2">
+              <View className="w-10 h-10 rounded-xl bg-red-100 items-center justify-center mr-3">
+                <Ionicons name="alert-circle" size={22} color="#EF4444" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-xs font-black text-red-900">
+                  Morning Stock Alert: {stats.lowStockCount} Items Low
+                </Text>
+                <Text className="text-[11px] text-red-600 font-medium mt-0.5" numberOfLines={1}>
+                  {stats.lowStockItems.slice(0, 3).map(i => i.name).join(', ')}...
+                </Text>
+              </View>
+            </View>
+            <View className="bg-red-200/60 rounded-xl px-2.5 py-1.5">
+              <Text className="text-red-800 text-[10px] font-black uppercase">Restock →</Text>
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* KPI Grid */}
         <Text className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Quick Metrics</Text>
         <View className="flex-row justify-between flex-wrap mb-2">
-          <StatCard icon="cube-outline" iconColor="#1E3A8A" label="Total Products" value={stats.totalProducts} iconBg="bg-blue-50" onPress={() => router.push('/admin/inventory')} />
-          <StatCard icon="alert-circle-outline" iconColor="#EF4444" label="Low Stock" value={`${stats.lowStockCount} Items`} valueColor="text-red-500" iconBg="bg-red-50" onPress={() => router.push('/admin/inventory')} />
-          <StatCard icon="car-outline" iconColor="#1E3A8A" label="Active Orders" value={`${stats.activeOrders} Active`} valueColor="text-[#1E3A8A]" iconBg="bg-blue-50" onPress={() => router.push('/admin/orders')} />
-          <StatCard icon="book-outline" iconColor="#D97706" label="Udhar Pending" value={`₹${stats.totalUdhar.toLocaleString('en-IN')}`} valueColor="text-amber-600" iconBg="bg-amber-50" onPress={() => router.push('/admin/udhar')} />
+          <StatCard
+            icon="cube-outline"
+            iconColor="#1E3A8A"
+            label="Total Products"
+            value={stats.totalProducts}
+            iconBg="bg-blue-50"
+            onPress={() => router.push('/admin/inventory')}
+          />
+          <StatCard
+            icon="alert-circle-outline"
+            iconColor="#EF4444"
+            label="Low Stock Items"
+            value={`${stats.lowStockCount} Items`}
+            valueColor="text-red-500"
+            iconBg="bg-red-50"
+            onPress={() => router.push('/admin/inventory')}
+          />
+          <StatCard
+            icon="bicycle-outline"
+            iconColor="#1E3A8A"
+            label="Active Orders"
+            value={`${stats.activeOrders} Orders`}
+            valueColor="text-[#1E3A8A]"
+            iconBg="bg-blue-50"
+            onPress={() => router.push('/admin/orders')}
+          />
+          <StatCard
+            icon="book-outline"
+            iconColor="#D97706"
+            label="Udhar Pending"
+            value={`₹${stats.totalUdhar.toLocaleString('en-IN')}`}
+            valueColor="text-amber-600"
+            iconBg="bg-amber-50"
+            onPress={() => router.push('/admin/udhar')}
+          />
         </View>
 
         {/* Quick Actions */}
         <Text className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 mt-2">Store Actions</Text>
-        <ActionRow icon="cube-outline" iconColor="#1E3A8A" iconBg="bg-blue-50" title="Manage Catalog & Stock" subtitle="Add items, upload photos, set prices" onPress={() => router.push('/admin/inventory')} />
-        <ActionRow icon="cart-outline" iconColor="#16A34A" iconBg="bg-green-50" title="Fulfill Delivery Orders" subtitle="Accept & dispatch 30-min orders" onPress={() => router.push('/admin/orders')} />
-        <ActionRow icon="pricetag-outline" iconColor="#C026D3" iconBg="bg-fuchsia-50" title="Offers & Promo Codes" subtitle="Create discounts and free delivery codes" onPress={() => router.push('/admin/offers')} />
-        <ActionRow icon="book-outline" iconColor="#D97706" iconBg="bg-amber-50" title="Udhar Khata (Ledger)" subtitle="Record payments, send WhatsApp reminders" onPress={() => router.push('/admin/udhar')} />
-        <ActionRow icon="folder-open-outline" iconColor="#0EA5E9" iconBg="bg-sky-50" title="Manage Categories" subtitle="Add/edit product categories with images" onPress={() => router.push('/admin/categories')} />
+        <ActionRow
+          icon="calculator-outline"
+          iconColor="#1E3A8A"
+          iconBg="bg-blue-50"
+          title="Quick POS Counter Billing"
+          subtitle="Scan barcodes & bill walk-in customers"
+          onPress={() => router.push('/admin/pos')}
+          badge="Fast POS"
+        />
+        <ActionRow
+          icon="cube-outline"
+          iconColor="#1E3A8A"
+          iconBg="bg-blue-50"
+          title="Manage Catalog & Stock"
+          subtitle="Add items, quick stepper restock, barcode scan"
+          onPress={() => router.push('/admin/inventory')}
+        />
+        <ActionRow
+          icon="bicycle-outline"
+          iconColor="#16A34A"
+          iconBg="bg-green-50"
+          title="Fulfill Delivery Orders"
+          subtitle="Accept, call customer & map route dispatch"
+          onPress={() => router.push('/admin/orders')}
+        />
+        <ActionRow
+          icon="book-outline"
+          iconColor="#D97706"
+          iconBg="bg-amber-50"
+          title="Udhar Khata (Digital Ledger)"
+          subtitle="Customer passbook history & WhatsApp reminders"
+          onPress={() => router.push('/admin/udhar')}
+        />
+        <ActionRow
+          icon="pricetag-outline"
+          iconColor="#C026D3"
+          iconBg="bg-fuchsia-50"
+          title="Offers & Promo Codes"
+          subtitle="Create discounts and free delivery codes"
+          onPress={() => router.push('/admin/offers')}
+        />
+        <ActionRow
+          icon="folder-open-outline"
+          iconColor="#0EA5E9"
+          iconBg="bg-sky-50"
+          title="Manage Categories"
+          subtitle="Add/edit product categories with camera upload"
+          onPress={() => router.push('/admin/categories')}
+        />
 
       </ScrollView>
     </SafeAreaView>

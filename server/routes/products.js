@@ -216,4 +216,38 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// PATCH Quick Stock Adjustment (stepper / delta or direct set)
+router.patch('/:id/stock', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { delta, stockQty } = req.body;
+    let prod;
+    try {
+      prod = await Product.findById(id);
+      if (prod) {
+        if (typeof stockQty === 'number') {
+          prod.stockQty = Math.max(0, stockQty);
+        } else if (typeof delta === 'number') {
+          prod.stockQty = Math.max(0, (prod.stockQty || 0) + delta);
+        }
+        await prod.save();
+      }
+    } catch (e) {
+      const idx = memoryProducts.findIndex(p => p._id === id);
+      if (idx !== -1) {
+        if (typeof stockQty === 'number') {
+          memoryProducts[idx].stockQty = Math.max(0, stockQty);
+        } else if (typeof delta === 'number') {
+          memoryProducts[idx].stockQty = Math.max(0, (memoryProducts[idx].stockQty || 0) + delta);
+        }
+        prod = memoryProducts[idx];
+      }
+    }
+    if (!prod) return res.status(404).json({ success: false, message: 'Product not found' });
+    res.json({ success: true, message: 'Stock updated', data: prod });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

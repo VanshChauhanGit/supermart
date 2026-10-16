@@ -40,9 +40,12 @@ router.post('/', upload.single('image'), async (req, res) => {
   console.log('Received file:', req.file);
 
   try {
-    // Upload to cloudinary
+    // Upload to cloudinary with 4:5 portrait aspect ratio as shown in design
     const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: 'supermart/products'
+      folder: 'supermart/products',
+      transformation: [
+        { width: 800, height: 1000, crop: 'fill', gravity: 'auto' }
+      ]
     });
     
     // Delete local file
@@ -69,7 +72,10 @@ router.post('/base64', async (req, res) => {
 
   try {
     const result = await cloudinary.uploader.upload(image, {
-      folder: 'supermart/products'
+      folder: 'supermart/products',
+      transformation: [
+        { width: 800, height: 1000, crop: 'fill', gravity: 'auto' }
+      ]
     });
     
     res.json({ 

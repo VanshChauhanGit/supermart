@@ -2,10 +2,13 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, FlatList, TextInput, TouchableOpacity,
   Modal, Image, ScrollView, Alert, StatusBar, ActivityIndicator,
-  PanResponder, TouchableWithoutFeedback, Dimensions, KeyboardAvoidingView, Platform
+  PanResponder, TouchableWithoutFeedback, Dimensions, KeyboardAvoidingView, Platform,
+  Vibration
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,8 +24,46 @@ export default function AdminInventoryScreen() {
   const [uploading, setUploading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [popover, setPopover] = useState({ visible: false, item: null, position: { x: 0, y: 0 }, alignTop: false });
+  const [filterLowStockOnly, setFilterLowStockOnly] = useState(false);
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
 
-  const panResponder = React.useRef(
+  const handleAdjustStock = async (item, delta) => {
+    const newQty = Math.max(0, (item.stockQty || 0) + delta);
+    setProducts(prev => prev.map(p => p._id === item._id ? { ...p, stockQty: newQty } : p));
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await fetch(`${apiBaseUrl}/products/${item._id}/stock`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delta })
+      });
+    } catch (e) {
+      fetchProducts();
+    }
+  };
+
+  const handleOpenScanner = async () => {
+    if (!permission?.granted) {
+      const res = await requestPermission();
+      if (!res.granted) {
+        Alert.alert('Permission Denied', 'Camera permission is required to scan barcodes.');
+        return;
+      }
+    }
+    setScannerVisible(true);
+  };
+
+  const handleBarcodeScanned = ({ data }) => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Vibration.vibrate(80);
+    } catch (e) {}
+    setScannerVisible(false);
+    setSearchTerm(String(data).trim());
+  };
+
+  const panResponder = React.useMemo(() =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderRelease: (evt, gestureState) => {
@@ -30,8 +71,8 @@ export default function AdminInventoryScreen() {
           setShowAddModal(false);
         }
       }
-    })
-  ).current;
+    }),
+  []);
 
   const samplePresets = [
     { label: 'Atta', url: 'https://images.unsplash.com/photo-1574316071802-0d684efa7bf5?auto=format&fit=crop&w=400&q=80' },
@@ -40,7 +81,7 @@ export default function AdminInventoryScreen() {
     { label: 'Noodles', url: 'https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?auto=format&fit=crop&w=400&q=80' },
   ];
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState(() => ({
     barcode: '890' + Math.floor(1000000000 + Math.random() * 9000000000),
     name: '',
     category: 'Grocery',
@@ -50,14 +91,14 @@ export default function AdminInventoryScreen() {
     sellingPrice: '',
     stockQty: '',
     imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80'
-  });
+  }));
 
   const fetchProducts = async () => {
     try {
       const res = await fetch(`${apiBaseUrl}/products`);
       const data = await res.json();
       if (data.success) setProducts(data.data);
-    } catch (e) { }
+    } catch (_e) { }
   };
 
   const fetchCategories = async () => {
@@ -67,18 +108,30 @@ export default function AdminInventoryScreen() {
       if (data.success) {
         setCategories(data.data.filter(c => c.isActive).map(c => c.name));
       }
-    } catch (e) { }
+    } catch (_e) { }
   };
 
   useEffect(() => {
-    fetchProducts();
-    fetchCategories();
-  }, []);
+    let active = true;
+    Promise.all([
+      fetch(`${apiBaseUrl}/products`).then(r => r.json()).catch(() => ({})),
+      fetch(`${apiBaseUrl}/categories`).then(r => r.json()).catch(() => ({}))
+    ]).then(([prodRes, catRes]) => {
+      if (!active) return;
+      if (prodRes?.success) setProducts(prodRes.data);
+      if (catRes?.success) {
+        setCategories(catRes.data.filter(c => c.isActive).map(c => c.name));
+      }
+    });
+    return () => { active = false; };
+  }, [apiBaseUrl]);
 
-  const filtered = products.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.barcode && p.barcode.includes(searchTerm))
-  );
+  const filtered = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.barcode && p.barcode.includes(searchTerm));
+    const matchesLow = !filterLowStockOnly || (p.stockQty <= (p.reorderLevel || 5));
+    return matchesSearch && matchesLow;
+  });
 
   const handleOpenAdd = () => {
     setEditingId(null);
@@ -122,15 +175,37 @@ export default function AdminInventoryScreen() {
       let result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.5,
+        aspect: [4, 5],
+        quality: 0.7,
         base64: true,
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
         await uploadImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
       }
-    } catch (error) {
+    } catch (_error) {
       Alert.alert('Error', 'Failed to take photo');
+    }
+  };
+
+  const pickGalleryImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Sorry, we need gallery permissions to pick an image!');
+        return;
+      }
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 5],
+        quality: 0.7,
+        base64: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        await uploadImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
+      }
+    } catch (_error) {
+      Alert.alert('Error', 'Failed to pick image from gallery');
     }
   };
 
@@ -214,10 +289,13 @@ export default function AdminInventoryScreen() {
       />
       <View className="flex-1">
         <Text className="text-[15px] leading-tight font-semibold text-[#1E3A8A] mb-1" numberOfLines={2}>{item.name}</Text>
-        <View className="flex-row items-center mb-2">
+        <View className="flex-row items-center mb-1.5">
           <View className="bg-slate-100 rounded-full px-2 py-0.5 mr-2">
             <Text className="text-[10px] font-semibold tracking-wide text-slate-700">{item.category}</Text>
           </View>
+          {item.barcode ? (
+            <Text className="text-[9px] text-slate-400 font-mono">#{item.barcode.slice(-6)}</Text>
+          ) : null}
         </View>
         <View className="flex-row items-center">
           <Text className="text-base font-bold text-[#1E3A8A] mr-2">₹{item.sellingPrice}</Text>
@@ -230,6 +308,29 @@ export default function AdminInventoryScreen() {
           </View>
         </View>
       </View>
+      <View className="items-end justify-between ml-1.5">
+        <View className="flex-row items-center bg-slate-100 rounded-xl p-0.5 border border-slate-200">
+          <TouchableOpacity
+            onPress={() => handleAdjustStock(item, -1)}
+            className="w-7 h-7 rounded-lg bg-white items-center justify-center shadow-xs"
+          >
+            <Ionicons name="remove" size={14} color="#1E3A8A" />
+          </TouchableOpacity>
+          <Text className="px-2 text-xs font-black text-slate-800">{item.stockQty}</Text>
+          <TouchableOpacity
+            onPress={() => handleAdjustStock(item, 1)}
+            className="w-7 h-7 rounded-lg bg-white items-center justify-center shadow-xs"
+          >
+            <Ionicons name="add" size={14} color="#1E3A8A" />
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity
+          onPress={() => handleAdjustStock(item, 5)}
+          className="bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 mt-1.5"
+        >
+          <Text className="text-[10px] font-black text-[#1E3A8A]">+5 Add</Text>
+        </TouchableOpacity>
+      </View>
     </>
   );
 
@@ -238,7 +339,7 @@ export default function AdminInventoryScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFF" />
 
       {/* Header */}
-      <View className="px-5 pb-4 flex-row justify-between items-center">
+      <View className="px-5 pb-3 flex-row justify-between items-center">
         <View>
           <Text className="text-4xl tracking-tight font-semibold text-[#1E3A8A]">Catalog</Text>
           <Text className="text-xs text-slate-500 font-semibold mt-1">
@@ -246,12 +347,6 @@ export default function AdminInventoryScreen() {
           </Text>
         </View>
         <View className="flex-row">
-          {/* <TouchableOpacity
-            onPress={() => router.push('/admin/categories')}
-            className="bg-slate-200/60 rounded-full px-4 py-3 mr-2"
-          >
-            <Text className="text-slate-700 text-xs font-black tracking-wide">Categories</Text>
-          </TouchableOpacity> */}
           <TouchableOpacity
             onPress={handleOpenAdd}
             className="bg-[#1E3A8A] rounded-full px-4 py-3 shadow-sm shadow-[#1E3A8A]/30"
@@ -261,13 +356,13 @@ export default function AdminInventoryScreen() {
         </View>
       </View>
 
-      {/* Search */}
-      <View className="mx-5 mb-4">
-        <View className="bg-white rounded-full px-4 py-3.5 flex-row items-center border border-slate-300">
+      {/* Search Bar + Barcode Scanner Trigger */}
+      <View className="mx-5 mb-2 flex-row items-center gap-2">
+        <View className="flex-1 bg-white rounded-full px-4 py-3 flex-row items-center border border-slate-300">
           <Ionicons name="search" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
           <TextInput
             className="flex-1 text-md font-semibold text-[#1E3A8A]"
-            placeholder="Search product name, SKU..."
+            placeholder="Search name, barcode..."
             placeholderTextColor="#94A3B8"
             value={searchTerm}
             onChangeText={setSearchTerm}
@@ -278,6 +373,40 @@ export default function AdminInventoryScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Barcode Camera Scanner Button */}
+        <TouchableOpacity
+          onPress={handleOpenScanner}
+          className="w-12 h-12 rounded-full bg-blue-50 border border-blue-200 justify-center items-center shadow-xs"
+        >
+          <Ionicons name="barcode-outline" size={24} color="#1E3A8A" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Low Stock Quick Filter Pill */}
+      <View className="mx-5 mb-3 flex-row items-center">
+        <TouchableOpacity
+          onPress={() => setFilterLowStockOnly(false)}
+          className={`px-3 py-1.5 rounded-xl mr-2 border ${
+            !filterLowStockOnly ? 'bg-[#1E3A8A] border-[#1E3A8A]' : 'bg-white border-slate-200'
+          }`}
+        >
+          <Text className={`text-xs font-bold ${!filterLowStockOnly ? 'text-white' : 'text-slate-600'}`}>
+            All ({products.length})
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => setFilterLowStockOnly(true)}
+          className={`px-3 py-1.5 rounded-xl border flex-row items-center ${
+            filterLowStockOnly ? 'bg-red-500 border-red-500' : 'bg-white border-slate-200'
+          }`}
+        >
+          <Ionicons name="alert-circle" size={13} color={filterLowStockOnly ? '#FFFFFF' : '#EF4444'} style={{ marginRight: 4 }} />
+          <Text className={`text-xs font-bold ${filterLowStockOnly ? 'text-white' : 'text-red-600'}`}>
+            Low Stock ({products.filter(p => p.stockQty <= (p.reorderLevel || 5)).length})
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Product List */}
@@ -290,7 +419,7 @@ export default function AdminInventoryScreen() {
           <View className="items-center pt-16">
             <Ionicons name="cube-outline" size={64} color="#CBD5E1" className="mb-3" />
             <Text className="text-base font-black text-[#1E3A8A]">No Products Found</Text>
-            <Text className="text-xs text-slate-400 mt-1">Tap "+ Add Item" to get started</Text>
+            <Text className="text-xs text-slate-400 mt-1">Tap &quot;+ Add Item&quot; to get started</Text>
           </View>
         )}
         renderItem={({ item }) => {
@@ -363,16 +492,10 @@ export default function AdminInventoryScreen() {
                 <Image
                   source={{ uri: formData.imageUrl }}
                   className="rounded-xl mr-4 bg-slate-200 border border-slate-100"
-                  style={{ width: 80, height: 80 }}
+                  style={{ width: 80, height: 100 }}
+                  resizeMode="cover"
                 />
                 <View className="flex-1">
-                  {/* <TextInput
-                    className="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-[#1E3A8A] mb-3"
-                    value={formData.imageUrl}
-                    onChangeText={(val) => setFormData({ ...formData, imageUrl: val })}
-                    placeholder="Paste image URL"
-                    placeholderTextColor="#94A3B8"
-                  /> */}
                   <View className="flex-row flex-wrap">
                     <TouchableOpacity
                       onPress={takePhoto}
@@ -387,6 +510,14 @@ export default function AdminInventoryScreen() {
                           <Text className="text-white text-[11px] font-black tracking-wide">Camera</Text>
                         </>
                       )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={pickGalleryImage}
+                      disabled={uploading}
+                      className="bg-slate-800 rounded-lg px-3 py-1.5 flex-row items-center mr-2 mb-1.5 shadow-sm"
+                    >
+                      <Ionicons name="images" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text className="text-white text-[11px] font-black tracking-wide">Gallery</Text>
                     </TouchableOpacity>
                     {samplePresets.map((p, i) => (
                       <TouchableOpacity
@@ -607,6 +738,42 @@ export default function AdminInventoryScreen() {
           </TouchableWithoutFeedback>
         </Modal>
       )}
+
+      {/* Barcode Camera Scanner Modal */}
+      <Modal visible={scannerVisible} animationType="slide">
+        <SafeAreaView className="flex-1 bg-black">
+          <View className="px-5 py-3 flex-row justify-between items-center">
+            <Text className="text-white font-black text-lg">Scan Barcode</Text>
+            <TouchableOpacity
+              onPress={() => setScannerVisible(false)}
+              className="w-9 h-9 rounded-full bg-white/20 items-center justify-center"
+            >
+              <Ionicons name="close" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          <View className="flex-1 justify-center items-center overflow-hidden">
+            <CameraView
+              style={{ width: Dimensions.get('window').width, height: Dimensions.get('window').height * 0.7 }}
+              facing="back"
+              barcodeScannerSettings={{
+                barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr']
+              }}
+              onBarcodeScanned={handleBarcodeScanned}
+            />
+
+            <View className="absolute border-2 border-blue-400 rounded-3xl w-72 h-44 bg-transparent justify-center items-center">
+              <View className="w-full h-0.5 bg-blue-400/80" />
+            </View>
+          </View>
+
+          <View className="p-5 items-center">
+            <Text className="text-white text-xs font-semibold text-center mb-2">
+              Align product barcode inside frame to search automatically.
+            </Text>
+          </View>
+        </SafeAreaView>
+      </Modal>
 
     </SafeAreaView>
   );
