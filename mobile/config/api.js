@@ -17,13 +17,18 @@ const getLocalIp = () => {
 
 const LOCAL_IP = getLocalIp();
 
-// Active Local API & Socket URLs:
-export const API_BASE_URL = `http://${LOCAL_IP}:5050/api/v1`;
-export const SOCKET_URL = `http://${LOCAL_IP}:5050`;
-
-// Live Render URLs (kept for easy toggle):
 export const LIVE_API_BASE_URL = "https://supermart-ok26.onrender.com/api/v1";
 export const LIVE_SOCKET_URL = "https://supermart-ok26.onrender.com";
+
+// In local dev (__DEV__ = true), use local machine server.
+// In Android APK release builds (__DEV__ = false), automatically use live server.
+export const API_BASE_URL = __DEV__
+  ? `http://${LOCAL_IP}:5050/api/v1`
+  : LIVE_API_BASE_URL;
+
+export const SOCKET_URL = __DEV__
+  ? `http://${LOCAL_IP}:5050`
+  : LIVE_SOCKET_URL;
 
 export default {
   API_BASE_URL,
