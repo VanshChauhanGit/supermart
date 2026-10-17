@@ -8,10 +8,10 @@ export default function Header({ systemStats, customers, onRefresh, adminUser, o
 
   return (
     <header className="bg-white border-b border-slate-200/80 px-6 py-3.5 sticky top-0 z-40 no-print shadow-sm">
-      <div className="flex justify-between items-center max-w-7xl mx-auto">
+      <div className="flex justify-end items-center max-w-7xl mx-auto">
         
         {/* Left Status Pulse */}
-        <div className="flex items-center gap-3">
+        {/* <div className="flex items-center gap-3">
           <span className="badge badge-emerald text-xs">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             Express & MongoDB Connected
@@ -19,7 +19,7 @@ export default function Header({ systemStats, customers, onRefresh, adminUser, o
           <span className="text-xs text-slate-500 font-medium hidden sm:inline">
             Supermart Store Engine v1.0.4
           </span>
-        </div>
+        </div> */}
 
         {/* Right Live KPI Indicators & Profile */}
         <div className="flex items-center gap-5">
@@ -30,12 +30,12 @@ export default function Header({ systemStats, customers, onRefresh, adminUser, o
             </div>
           </div>
 
-          <div className="text-right pl-5 border-l border-slate-200 cursor-pointer" onClick={() => navigate('/udhar')}>
+          {/* <div className="text-right pl-5 border-l border-slate-200 cursor-pointer" onClick={() => navigate('/udhar')}>
             <div className="text-[11px] text-slate-500 font-semibold">Market Udhar Debt</div>
             <div className="text-sm font-black text-amber-600">
               ₹{totalUdhar.toLocaleString('en-IN')}
             </div>
-          </div>
+          </div> */}
 
           {adminUser && (
             <div 
@@ -63,7 +63,7 @@ export default function Header({ systemStats, customers, onRefresh, adminUser, o
             </button>
           )}
 
-          {onLogout && (
+          {/* {onLogout && (
             <button
               onClick={() => {
                 if (window.confirm('Are you sure you want to log out of Supermart Admin?')) {
@@ -75,7 +75,7 @@ export default function Header({ systemStats, customers, onRefresh, adminUser, o
             >
               <LogOut size={16} />
             </button>
-          )}
+          )} */}
         </div>
       </div>
     </header>

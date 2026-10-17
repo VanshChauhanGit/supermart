@@ -9,21 +9,12 @@ import React, {
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { io } from "socket.io-client";
+import { API_BASE_URL } from "../config/api";
 
 const AppContext = createContext();
 
 const getDefaultApiUrl = () => {
-  try {
-    const hostUri =
-      Constants.expoConfig?.hostUri || Constants.manifest?.debuggerHost;
-    if (hostUri) {
-      const ip = hostUri.split(":")[0];
-      if (ip && ip !== "localhost" && ip !== "127.0.0.1") {
-        return `http://${ip}:5050/api/v1`;
-      }
-    }
-  } catch (e) { }
-  return "https://supermart-ok26.onrender.com/api/v1";
+  return API_BASE_URL;
 };
 
 // Persistent storage helper using AsyncStorage
