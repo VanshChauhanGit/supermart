@@ -1,6 +1,7 @@
 {
   "name": "supermart-web",
   "version": "1.0.0",
+  "type": "module",
   "description": "Full-stack Kiryana & Supermart POS, Inventory, Udhar Management, E-Commerce Delivery & Mobile API Platform",
   "scripts": {
     "dev": "vite",
