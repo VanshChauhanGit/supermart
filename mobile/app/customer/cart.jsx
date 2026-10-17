@@ -15,7 +15,6 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '../../context/AppContext';
 import AllInOneSDKManager from 'paytm_allinone_react-native';
 
@@ -23,15 +22,12 @@ export default function CustomerCartScreen() {
   const insets = useSafeAreaInsets();
   const { cart, updateCartQty, clearCart, customerUser, apiBaseUrl } = useApp();
 
-  const [address, setAddress] = useState(customerUser?.address || 'House No 42, Green Park Main');
-  const [pincode, setPincode] = useState(customerUser?.pincode || '110016');
+  const [address, setAddress] = useState(customerUser?.address || '');
+  const [pincode, setPincode] = useState(customerUser?.pincode || '');
   const [landmark, setLandmark] = useState('');
-  const [addressType, setAddressType] = useState('Home'); // 'Home' | 'Work' | 'Other'
   const [coords, setCoords] = useState(null); // { latitude: Number, longitude: Number }
-  const [isLocating, setIsLocating] = useState(false);
-  const [savedAddresses, setSavedAddresses] = useState([]);
-  const [selectedSavedId, setSelectedSavedId] = useState(null);
-  const [saveThisAddress, setSaveThisAddress] = useState(true);
+  const [isLocating, setIsLocating] = useState(true);
+  const [locationError, setLocationError] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('COD');
   const [submitting, setSubmitting] = useState(false);
 
@@ -63,43 +59,22 @@ export default function CustomerCartScreen() {
     return () => { active = false; };
   }, [apiBaseUrl]);
 
-  // Load saved customer addresses from storage and backend
-  useEffect(() => {
-    const loadSavedAddresses = async () => {
-      try {
-        const local = await AsyncStorage.getItem('supermart_saved_addresses');
-        if (local) {
-          const parsed = JSON.parse(local);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setSavedAddresses(parsed);
-          }
-        }
-        if (customerUser?.phone) {
-          const cleanPhone = customerUser.phone.replace(/\D/g, '');
-          const res = await fetch(`${apiBaseUrl}/customers/${cleanPhone}/addresses`);
-          const data = await res.json();
-          if (data.success && Array.isArray(data.data) && data.data.length > 0) {
-            setSavedAddresses(data.data);
-            await AsyncStorage.setItem('supermart_saved_addresses', JSON.stringify(data.data));
-          }
-        }
-      } catch (_e) {}
-    };
-    loadSavedAddresses();
-  }, [customerUser, apiBaseUrl]);
-
-  // GPS Auto-Location Detection with Reverse Geocoding
-  const handleDetectLocation = async () => {
+  // Live GPS Auto-Detection & Reverse Geocoding
+  const handleDetectLocation = async (isManual = false) => {
     try {
       setIsLocating(true);
-      triggerHaptic();
+      setLocationError(null);
+      if (isManual) triggerHaptic();
 
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          'Location Permission Needed',
-          'Please allow Supermart to access your device location to pin your doorstep for 10-minute delivery.'
-        );
+        setLocationError('Location permission needed');
+        if (isManual) {
+          Alert.alert(
+            'Location Permission Needed',
+            'Please allow Supermart to access your device location to pin your doorstep for 10-minute delivery.'
+          );
+        }
         setIsLocating(false);
         return;
       }
@@ -119,32 +94,24 @@ export default function CustomerCartScreen() {
         const city = geo.city || '';
         const postCode = geo.postalCode || '';
 
-        const autoAddress = `${namePart}${street ? street + ', ' : ''}${subregion ? subregion + ', ' : ''}${city}`.replace(/,\s*,/g, ',').trim();
+        const autoAddress = `${namePart}${street ? street + ', ' : ''}${subregion ? subregion + ', ' : ''}${city}`.replace(/,\s*,/g, ',').replace(/^,\s*/, '').trim();
         if (autoAddress) setAddress(autoAddress);
         if (postCode) setPincode(postCode);
       }
-
-      setSelectedSavedId(null);
-      Alert.alert('📍 GPS Pinned!', 'Your live coordinates have been locked for accurate delivery partner navigation.');
     } catch (e) {
-      Alert.alert('Location Error', 'Unable to fetch current GPS coordinates. Please ensure GPS is enabled on your device.');
+      setLocationError('Unable to detect GPS position');
+      if (isManual) {
+        Alert.alert('Location Error', 'Unable to fetch current GPS coordinates. Please ensure GPS is enabled on your device.');
+      }
     } finally {
       setIsLocating(false);
     }
   };
 
-  // 1-Tap Saved Address Selector
-  const handleSelectSavedAddress = (saved) => {
-    triggerHaptic();
-    setSelectedSavedId(saved.id);
-    if (saved.address) setAddress(saved.address);
-    if (saved.pincode) setPincode(saved.pincode);
-    if (saved.landmark) setLandmark(saved.landmark);
-    if (saved.type) setAddressType(saved.type);
-    if (saved.latitude && saved.longitude) {
-      setCoords({ latitude: saved.latitude, longitude: saved.longitude });
-    }
-  };
+  // Automatically fetch live GPS location on component mount
+  useEffect(() => {
+    handleDetectLocation(false);
+  }, []);
 
   // Calculations
   const subtotal = cart.reduce((acc, i) => acc + (i.sellingPrice * i.quantity), 0);
@@ -228,6 +195,17 @@ export default function CustomerCartScreen() {
       Alert.alert('Empty Basket', 'Please add products to your cart before proceeding.');
       return;
     }
+    if (!coords?.latitude || !coords?.longitude) {
+      Alert.alert(
+        'Live Location Required',
+        'Live GPS location is required to place your order for 10-minute delivery. Please allow location access.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Detect Location', onPress: () => handleDetectLocation(true) }
+        ]
+      );
+      return;
+    }
     if (!address.trim()) {
       Alert.alert('Delivery Address Required', 'Please provide your full delivery address.');
       return;
@@ -240,13 +218,13 @@ export default function CustomerCartScreen() {
       const payload = {
         customerName: customerUser ? customerUser.name : 'Walk-in Customer',
         phone: customerUser ? customerUser.phone : '9876543210',
-        deliveryAddress: `${addressType ? `[${addressType}] ` : ''}${address}`,
-        pincode,
+        deliveryAddress: address.trim(),
+        pincode: pincode.trim(),
         location: {
-          latitude: coords?.latitude || null,
-          longitude: coords?.longitude || null,
-          formattedAddress: address,
-          landmark: landmark || ''
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          formattedAddress: address.trim(),
+          landmark: landmark.trim() || ''
         },
         items: cart.map(i => ({
           productId: i._id,
@@ -263,32 +241,6 @@ export default function CustomerCartScreen() {
         totalAmount: grandTotal,
         paymentMethod
       };
-
-      // Optionally save address for future 1-tap checkout
-      if (saveThisAddress && address.trim()) {
-        const newAddr = {
-          id: selectedSavedId || ('addr_' + Date.now()),
-          type: addressType,
-          tag: addressType,
-          address,
-          landmark,
-          pincode,
-          latitude: coords?.latitude || null,
-          longitude: coords?.longitude || null,
-          isDefault: false
-        };
-        const updated = [newAddr, ...savedAddresses.filter(a => a.id !== newAddr.id)];
-        setSavedAddresses(updated);
-        AsyncStorage.setItem('supermart_saved_addresses', JSON.stringify(updated)).catch(() => {});
-        if (customerUser?.phone) {
-          const cleanPhone = customerUser.phone.replace(/\D/g, '');
-          fetch(`${apiBaseUrl}/customers/${cleanPhone}/addresses`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newAddr)
-          }).catch(() => {});
-        }
-      }
 
       const res = await fetch(`${apiBaseUrl}/orders`, {
         method: 'POST',
@@ -494,7 +446,7 @@ export default function CustomerCartScreen() {
           contentContainerStyle={{
             paddingHorizontal: 16,
             paddingTop: 14,
-            paddingBottom: Math.max(insets.bottom, 8) + 160
+            paddingBottom: Math.max(insets.bottom, 8) + 80
           }}
           showsVerticalScrollIndicator={false}
         >
@@ -628,7 +580,7 @@ export default function CustomerCartScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* ── Section B: Delivery Address & Live GPS Location Manager ── */}
+          {/* ── Section B: Delivery Address (Live GPS Auto-Filled) ── */}
           <View className="bg-white rounded-3xl p-4 mb-4 border border-slate-200/90 shadow-xs">
             <View className="flex-row items-center justify-between mb-3">
               <View className="flex-row items-center">
@@ -636,143 +588,74 @@ export default function CustomerCartScreen() {
                   <Ionicons name="location-sharp" size={15} color="#D97706" />
                 </View>
                 <Text className="text-sm font-black text-slate-900 tracking-tight">
-                  Delivery Location
+                  Delivery Address
                 </Text>
               </View>
 
-              {/* Tag Selection: Home / Work / Other */}
-              <View className="flex-row bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-                {['Home', 'Work', 'Other'].map(type => (
-                  <TouchableOpacity
-                    key={type}
-                    onPress={() => {
-                      triggerHaptic();
-                      setAddressType(type);
-                    }}
-                    className={`px-2 py-0.5 rounded-md ${addressType === type ? 'bg-white shadow-xs' : ''}`}
-                  >
-                    <Text className={`text-[10px] ${addressType === type ? 'font-black text-slate-900' : 'font-semibold text-slate-500'}`}>
-                      {type}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {/* Live Location Status Indicator / Refresh */}
+              {isLocating ? (
+                <View className="flex-row items-center bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200/80">
+                  <ActivityIndicator size="small" color="#D97706" style={{ marginRight: 4 }} />
+                  <Text className="text-[10px] font-bold text-amber-800">Detecting...</Text>
+                </View>
+              ) : coords?.latitude ? (
+                <TouchableOpacity
+                  onPress={() => handleDetectLocation(true)}
+                  activeOpacity={0.7}
+                  className="flex-row items-center bg-emerald-50 border border-emerald-200/90 px-2.5 py-1 rounded-full"
+                >
+                  <Ionicons name="navigate" size={11} color="#059669" style={{ marginRight: 3 }} />
+                  <Text className="text-[10px] font-black text-emerald-800">Live GPS</Text>
+                  <Ionicons name="refresh" size={10} color="#059669" style={{ marginLeft: 3 }} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => handleDetectLocation(true)}
+                  activeOpacity={0.7}
+                  className="flex-row items-center bg-amber-50 border border-amber-300 px-2.5 py-1 rounded-full"
+                >
+                  <Ionicons name="locate" size={12} color="#D97706" style={{ marginRight: 3 }} />
+                  <Text className="text-[10px] font-black text-amber-900">Get Live GPS</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
-            {/* ── 1. GPS Auto-Detect Button ── */}
-            <TouchableOpacity
-              onPress={handleDetectLocation}
-              disabled={isLocating}
-              activeOpacity={0.8}
-              className={`mb-3 py-2.5 px-3 rounded-2xl border flex-row items-center justify-between ${
-                coords?.latitude
-                  ? 'bg-emerald-50 border-emerald-300'
-                  : 'bg-amber-50 border-amber-300'
-              }`}
-            >
-              <View className="flex-row items-center flex-1 mr-2">
-                <View className={`w-7 h-7 rounded-full items-center justify-center mr-2.5 ${
-                  coords?.latitude ? 'bg-emerald-500' : 'bg-[#F7C400]'
-                }`}>
-                  {isLocating ? (
-                    <ActivityIndicator size="small" color="#0F172A" />
-                  ) : (
-                    <Ionicons
-                      name={coords?.latitude ? 'checkmark-circle' : 'navigate'}
-                      size={15}
-                      color={coords?.latitude ? '#FFFFFF' : '#0F172A'}
-                    />
-                  )}
-                </View>
-                <View className="flex-1">
-                  <Text className="text-xs font-black text-slate-900">
-                    {isLocating
-                      ? 'Acquiring GPS Satellite Lock...'
-                      : coords?.latitude
-                      ? 'GPS Location Pinned ✓'
-                      : 'Auto-Detect Current GPS Location'}
-                  </Text>
-                  <Text className="text-[10px] font-semibold text-slate-500 mt-0.5" numberOfLines={1}>
-                    {coords?.latitude
-                      ? `Lat: ${coords.latitude.toFixed(4)}, Lng: ${coords.longitude.toFixed(4)}`
-                      : 'Reverse-geocodes your doorstep for rider navigation'}
+            {/* Error / Permission Banner if not fetched */}
+            {locationError && !coords?.latitude && !isLocating && (
+              <View className="mb-3 bg-rose-50 border border-rose-200 rounded-2xl p-3 flex-row items-center justify-between">
+                <View className="flex-row items-center flex-1 mr-2">
+                  <Ionicons name="alert-circle" size={17} color="#E11D48" style={{ marginRight: 6 }} />
+                  <Text className="text-xs font-semibold text-rose-900 flex-1">
+                    Live location required for 10-minute delivery
                   </Text>
                 </View>
-              </View>
-
-              <View className="bg-white/80 px-2 py-1 rounded-lg border border-slate-200">
-                <Text className="text-[10px] font-bold text-slate-700">
-                  {coords?.latitude ? 'Re-pin 📍' : 'Locate ⚡'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* ── 2. Saved Addresses Carousel (If available) ── */}
-            {savedAddresses.length > 0 && (
-              <View className="mb-3">
-                <Text className="text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wide">
-                  Saved Addresses (1-Tap Select)
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
-                  {savedAddresses.map((item) => {
-                    const isSelected = selectedSavedId === item.id || address === item.address;
-                    return (
-                      <TouchableOpacity
-                        key={item.id}
-                        onPress={() => handleSelectSavedAddress(item)}
-                        activeOpacity={0.75}
-                        className={`mr-2.5 p-2.5 rounded-2xl border min-w-[130px] max-w-[170px] ${
-                          isSelected
-                            ? 'bg-slate-900 border-slate-900 shadow-sm'
-                            : 'bg-[#F8FAFC] border-slate-200'
-                        }`}
-                      >
-                        <View className="flex-row items-center mb-1">
-                          <Ionicons
-                            name={item.type === 'Work' ? 'briefcase' : item.type === 'Other' ? 'location' : 'home'}
-                            size={12}
-                            color={isSelected ? '#F7C400' : '#475569'}
-                            style={{ marginRight: 4 }}
-                          />
-                          <Text className={`text-[10px] font-black uppercase ${
-                            isSelected ? 'text-[#F7C400]' : 'text-slate-700'
-                          }`}>
-                            {item.tag || item.type || 'Home'}
-                          </Text>
-                        </View>
-                        <Text numberOfLines={1} className={`text-[11px] font-semibold ${
-                          isSelected ? 'text-white' : 'text-slate-800'
-                        }`}>
-                          {item.address}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
+                <TouchableOpacity
+                  onPress={() => handleDetectLocation(true)}
+                  className="bg-rose-500 px-2.5 py-1 rounded-xl active:bg-rose-600"
+                >
+                  <Text className="text-[11px] font-black text-white">Enable</Text>
+                </TouchableOpacity>
               </View>
             )}
 
-            {/* ── 3. House & Street Input ── */}
+            {/* ── House & Street Details Input (Auto-filled via Live GPS) ── */}
             <View className="mb-2.5">
               <Text className="text-[11px] font-bold text-slate-600 mb-1">
-                House & Street Details
+                House / Flat & Street Details
               </Text>
               <View className="flex-row items-center bg-[#F8FAFC] border border-slate-200 rounded-2xl px-3 py-2.5">
                 <Ionicons name="home-outline" size={15} color="#64748B" style={{ marginRight: 8 }} />
                 <TextInput
                   className="flex-1 text-xs font-semibold text-slate-900 py-0"
                   value={address}
-                  onChangeText={(val) => {
-                    setAddress(val);
-                    setSelectedSavedId(null);
-                  }}
-                  placeholder="House No, Apartment, Street Name"
+                  onChangeText={setAddress}
+                  placeholder={isLocating ? 'Detecting live GPS address...' : 'House / Flat No, Apartment, Street Name'}
                   placeholderTextColor="#94A3B8"
                 />
               </View>
             </View>
 
-            {/* ── 4. Landmark Input (Crucial for delivery boy navigation) ── */}
+            {/* ── Landmark Input ── */}
             <View className="mb-2.5">
               <Text className="text-[11px] font-bold text-slate-600 mb-1">
                 Landmark / Floor / Gate No. (Optional)
@@ -789,8 +672,8 @@ export default function CustomerCartScreen() {
               </View>
             </View>
 
-            {/* ── 5. Pincode & Recipient Info ── */}
-            <View className="flex-row items-center justify-between mb-2">
+            {/* ── Pincode & Recipient Info ── */}
+            <View className="flex-row items-center justify-between">
               <View className="flex-1 mr-2">
                 <Text className="text-[11px] font-bold text-slate-600 mb-1">
                   Pincode
@@ -819,26 +702,6 @@ export default function CustomerCartScreen() {
                 </View>
               </View>
             </View>
-
-            {/* ── 6. Save Address Toggle ── */}
-            <TouchableOpacity
-              onPress={() => {
-                triggerHaptic();
-                setSaveThisAddress(!saveThisAddress);
-              }}
-              activeOpacity={0.7}
-              className="flex-row items-center pt-2"
-            >
-              <Ionicons
-                name={saveThisAddress ? 'checkbox' : 'square-outline'}
-                size={16}
-                color={saveThisAddress ? '#1E3A8A' : '#94A3B8'}
-                style={{ marginRight: 6 }}
-              />
-              <Text className="text-xs font-semibold text-slate-700">
-                Save this address for fast 1-tap checkout next time
-              </Text>
-            </TouchableOpacity>
           </View>
 
           {/* ── Section C: Coupons & Promo Offers ── */}
@@ -1126,7 +989,7 @@ export default function CustomerCartScreen() {
           </View>
 
           {/* ── Section F: Quick Commerce Trust Guarantees ── */}
-          <View className="flex-row justify-between items-center py-2 px-1 mb-2">
+          <View className="flex-row justify-between items-center py-2 px-1 mb-3">
             <View className="flex-row items-center">
               <Ionicons name="shield-checkmark" size={14} color="#059669" style={{ marginRight: 4 }} />
               <Text className="text-[10px] font-bold text-slate-500">100% Genuine</Text>
@@ -1141,58 +1004,117 @@ export default function CustomerCartScreen() {
             </View>
           </View>
 
-        </ScrollView>
-      )}
-
-      {/* ══════════════════════════════════════════════════════
-          3. FLOATING STICKY CHECKOUT BAR (Matches Home Screen Pill)
-          ══════════════════════════════════════════════════════ */}
-      {cart.length > 0 && (
-        <View
-          pointerEvents="box-none"
-          className="absolute left-4 right-4 z-50"
-          style={{ bottom: Math.max(insets.bottom, 8) + 74 }}
-        >
-          <TouchableOpacity
-            onPress={handlePlaceOrder}
-            disabled={submitting}
-            activeOpacity={0.92}
-            className="bg-slate-900 rounded-2xl py-3.5 px-4 flex-row items-center justify-between border-[1.5px] border-[#F7C400] shadow-xl"
-          >
-            {/* Left: Total Amount & Items */}
-            <View className="flex-row items-center">
-              <View className="w-[42px] h-[42px] rounded-xl bg-[#F7C400] items-center justify-center mr-3 shadow-xs">
-                <Ionicons name="bag-check" size={22} color="#0F172A" />
+          {/* ── Section G: Place Order Card (Bottom of page below payment) ── */}
+          <View className="bg-white rounded-3xl p-4 mb-4 border border-slate-200/90 shadow-xs">
+            {/* Amount & Items Row */}
+            <View className="flex-row items-center justify-between pb-3.5 mb-3.5 border-b border-slate-100">
+              <View>
+                <Text className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  Total Payable
+                </Text>
+                <View className="flex-row items-baseline mt-0.5">
+                  <Text className="text-2xl font-black text-slate-900 tracking-tight">
+                    ₹{grandTotal}
+                  </Text>
+                  <Text className="text-xs font-semibold text-slate-500 ml-2">
+                    ({cartTotalCount} {cartTotalCount === 1 ? 'item' : 'items'})
+                  </Text>
+                </View>
               </View>
 
-              <View>
-                <Text className="text-white text-base font-black tracking-tight">
-                  ₹{grandTotal}
-                </Text>
-                <Text className="text-slate-300 text-[11px] font-semibold">
-                  {cartTotalCount} {cartTotalCount === 1 ? 'item' : 'items'} • {paymentMethod === 'COD' ? 'Cash on Delivery' : 'Paytm / UPI'}
+              <View className="bg-amber-50 border border-amber-200/80 px-2.5 py-1.5 rounded-xl flex-row items-center">
+                <Ionicons
+                  name={paymentMethod === 'COD' ? 'cash-outline' : 'flash'}
+                  size={14}
+                  color="#D97706"
+                  style={{ marginRight: 4 }}
+                />
+                <Text className="text-xs font-black text-slate-800">
+                  {paymentMethod === 'COD' ? 'Cash on Delivery' : 'Paytm / UPI'}
                 </Text>
               </View>
             </View>
 
-            {/* Right: Place Order CTA */}
-            <View className="flex-row items-center bg-[#F7C400] px-4 py-2 rounded-xl">
-              {submitting ? (
-                <View className="flex-row items-center">
-                  <ActivityIndicator size="small" color="#0F172A" />
-                  <Text className="text-slate-900 text-xs font-black ml-1.5">Processing...</Text>
-                </View>
-              ) : (
-                <View className="flex-row items-center">
-                  <Text className="text-slate-900 text-xs font-black mr-1">
-                    Place Order
+            {/* Live Location Alert / Warning if not fetched */}
+            {!coords?.latitude && (
+              <View className="bg-amber-50 border border-amber-200 rounded-2xl p-2.5 mb-3 flex-row items-center justify-between">
+                <View className="flex-row items-center flex-1 mr-2">
+                  {isLocating ? (
+                    <ActivityIndicator size="small" color="#D97706" style={{ marginRight: 6 }} />
+                  ) : (
+                    <Ionicons name="location" size={15} color="#D97706" style={{ marginRight: 6 }} />
+                  )}
+                  <Text className="text-xs font-bold text-amber-900 flex-1">
+                    {isLocating ? 'Detecting your live location...' : 'Live GPS location is required to place order'}
                   </Text>
-                  <Ionicons name="flash" size={14} color="#0F172A" />
+                </View>
+                {!isLocating && (
+                  <TouchableOpacity
+                    onPress={() => handleDetectLocation(true)}
+                    className="bg-[#F7C400] px-2.5 py-1 rounded-lg border border-[#FACC15]"
+                  >
+                    <Text className="text-[11px] font-black text-slate-900">Locate</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* Place Order CTA Button */}
+            <TouchableOpacity
+              onPress={handlePlaceOrder}
+              disabled={submitting || isLocating || !coords?.latitude}
+              activeOpacity={0.88}
+              className={`w-full py-3.5 px-4 rounded-2xl flex-row items-center justify-between shadow-xs ${
+                !coords?.latitude || isLocating
+                  ? 'bg-slate-100 border border-slate-200'
+                  : 'bg-[#F7C400] active:bg-[#eab308] border border-[#facc15]'
+              }`}
+            >
+              <View className="flex-row items-center">
+                <View className={`w-8 h-8 rounded-xl items-center justify-center mr-2.5 ${
+                  !coords?.latitude || isLocating ? 'bg-slate-200' : 'bg-white/40'
+                }`}>
+                  <Ionicons
+                    name="bag-check"
+                    size={18}
+                    color={!coords?.latitude || isLocating ? '#94A3B8' : '#0F172A'}
+                  />
+                </View>
+                <Text className={`text-base font-black tracking-tight ${
+                  !coords?.latitude || isLocating ? 'text-slate-400' : 'text-slate-900'
+                }`}>
+                  {submitting
+                    ? 'Placing Order...'
+                    : isLocating
+                    ? 'Detecting Location...'
+                    : !coords?.latitude
+                    ? 'Location Required'
+                    : 'Place Order'}
+                </Text>
+              </View>
+
+              {submitting || isLocating ? (
+                <ActivityIndicator size="small" color={!coords?.latitude || isLocating ? '#64748B' : '#0F172A'} />
+              ) : (
+                <View className={`flex-row items-center px-3 py-1.5 rounded-xl ${
+                  !coords?.latitude ? 'bg-slate-200' : 'bg-slate-900'
+                }`}>
+                  <Text className={`text-xs font-black mr-1 ${
+                    !coords?.latitude ? 'text-slate-500' : 'text-[#F7C400]'
+                  }`}>
+                    {coords?.latitude ? `₹${grandTotal}` : 'Disabled'}
+                  </Text>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={13}
+                    color={!coords?.latitude ? '#94A3B8' : '#F7C400'}
+                  />
                 </View>
               )}
-            </View>
-          </TouchableOpacity>
-        </View>
+            </TouchableOpacity>
+          </View>
+
+        </ScrollView>
       )}
 
     </SafeAreaView>

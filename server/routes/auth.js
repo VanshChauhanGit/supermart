@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const Admin = require('../models/Admin');
 const Customer = require('../models/Customer');
+const OnlineOrder = require('../models/OnlineOrder');
 const { generateToken, protect } = require('../middleware/auth');
 
 // Helper to sanitize user object (strip password)
@@ -74,9 +75,8 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // Validation: Role
-    const validRoles = ['customer', 'delivery_partner'];
-    const assignedRole = validRoles.includes(role) ? role : 'customer';
+    // Validation: Role (Public registration is strictly restricted to customers; delivery boys can only be created by Admin)
+    const assignedRole = 'customer';
 
     // Check if mobile number is already registered
     if (!isDbConnected()) {
@@ -684,6 +684,215 @@ router.post('/logout', (req, res) => {
     success: true,
     message: 'Logged out successfully'
   });
+});
+
+/**
+ * ══════════════════════════════════════════════════════
+ * DELIVERY BOY MANAGEMENT ENDPOINTS (Store Owner Only)
+ * ══════════════════════════════════════════════════════
+ */
+
+// GET All Delivery Boys with live busy status
+router.get('/admin/delivery-boys', async (req, res) => {
+  try {
+    let deliveryBoys = [];
+    if (isDbConnected()) {
+      deliveryBoys = await User.find({ role: 'delivery_partner' }).sort({ createdAt: -1 });
+    }
+
+    // Check which delivery boys currently have an active OUT_FOR_DELIVERY order
+    const enrichedBoys = await Promise.all(deliveryBoys.map(async (boy) => {
+      const safeBoy = sanitizeUser(boy);
+      let activeOrder = null;
+      try {
+        activeOrder = await OnlineOrder.findOne({
+          status: 'OUT_FOR_DELIVERY',
+          $or: [
+            { deliveryBoyId: String(boy._id) },
+            { riderPhone: boy.mobile }
+          ]
+        });
+      } catch (e) {}
+
+      return {
+        ...safeBoy,
+        isBusy: Boolean(activeOrder),
+        activeOrder: activeOrder ? {
+          orderNo: activeOrder.orderNo,
+          customerName: activeOrder.customerName,
+          deliveryAddress: activeOrder.deliveryAddress
+        } : null
+      };
+    }));
+
+    res.json({
+      success: true,
+      count: enrichedBoys.length,
+      data: enrichedBoys
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Create New Delivery Boy Account (Only Owner / Admin)
+router.post('/admin/delivery-boys', async (req, res) => {
+  try {
+    const { name, mobile, phone, password, vehicleType, vehicleNumber } = req.body;
+    const targetMobile = normalizeMobile(mobile || phone);
+
+    if (!name || name.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Delivery partner name must be at least 2 characters.'
+      });
+    }
+
+    if (!targetMobile || targetMobile.length !== 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid 10-digit mobile number required.'
+      });
+    }
+
+    if (!password || password.length < 4) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 4 characters.'
+      });
+    }
+
+    // Check if phone is already registered
+    const existing = await User.findOne({ mobile: targetMobile });
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: `Phone number ${targetMobile} is already registered (${existing.role}).`
+      });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    let vType = (vehicleType || 'bike').toLowerCase().trim();
+    if (vType.includes('scooter') || vType.includes('ev') || vType.includes('electric')) {
+      vType = 'scooter';
+    } else if (vType.includes('cycle') || vType.includes('bicycle')) {
+      vType = 'cycle';
+    } else if (vType.includes('bike') || vType.includes('motor')) {
+      vType = 'bike';
+    } else {
+      vType = 'other';
+    }
+
+    const newDeliveryBoy = await User.create({
+      name: name.trim(),
+      mobile: targetMobile,
+      password: hashedPassword,
+      role: 'delivery_partner',
+      vehicleType: vType,
+      vehicleNumber: (vehicleNumber || '').toUpperCase().trim(),
+      isAvailable: true,
+      isActive: true
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Delivery Partner account for ${newDeliveryBoy.name} created successfully!`,
+      data: sanitizeUser(newDeliveryBoy)
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE Remove Delivery Boy
+router.delete('/admin/delivery-boys/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Check if delivery boy is currently out on delivery
+    const activeOrder = await OnlineOrder.findOne({
+      status: 'OUT_FOR_DELIVERY',
+      deliveryBoyId: id
+    });
+
+    if (activeOrder) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete: Delivery partner is currently delivering Order #${activeOrder.orderNo}.`
+      });
+    }
+
+    await User.findByIdAndDelete(id);
+    res.json({
+      success: true,
+      message: 'Delivery partner removed successfully.'
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * @route   POST /api/v1/auth/admin/push-token
+ * @desc    Register Store Owner Expo Push Token for background & closed-app alerts
+ * @access  Public / Admin
+ */
+const {
+  registerAdminPushToken,
+  getAdminPushTokens,
+  registerDeliveryBoyPushToken,
+  getDeliveryBoyTokens
+} = require('../utils/pushNotifications');
+
+router.post('/admin/push-token', (req, res) => {
+  try {
+    const { pushToken } = req.body;
+    if (!pushToken) {
+      return res.status(400).json({ success: false, message: 'pushToken is required' });
+    }
+
+    const registered = registerAdminPushToken(pushToken);
+    res.json({
+      success: true,
+      message: 'Push token registered successfully for background order alerts.',
+      activeCount: getAdminPushTokens().length
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * @route   POST /api/v1/auth/delivery-boy/push-token
+ * @desc    Register Delivery Partner Expo Push Token for assignment alerts
+ * @access  Public / Delivery Partner
+ */
+router.post('/delivery-boy/push-token', async (req, res) => {
+  try {
+    const { pushToken, deliveryBoyId, mobile } = req.body;
+    if (!pushToken) {
+      return res.status(400).json({ success: false, message: 'pushToken is required' });
+    }
+
+    const registered = registerDeliveryBoyPushToken({ deliveryBoyId, mobile, pushToken });
+
+    if (isDbConnected() && deliveryBoyId) {
+      try {
+        await User.findByIdAndUpdate(deliveryBoyId, {
+          $addToSet: { pushTokens: pushToken }
+        });
+      } catch (_e) {}
+    }
+
+    res.json({
+      success: true,
+      message: 'Delivery partner push token registered successfully.',
+      tokensCount: getDeliveryBoyTokens(deliveryBoyId, mobile).length
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 module.exports = router;

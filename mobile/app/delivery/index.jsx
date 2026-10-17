@@ -3,6 +3,7 @@ import {
   View,
   Text,
   FlatList,
+  ScrollView,
   TouchableOpacity,
   RefreshControl,
   Alert,
@@ -10,23 +11,34 @@ import {
   Linking,
   Modal,
   TextInput,
-  ActivityIndicator
+  ActivityIndicator,
+  BackHandler,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../../context/AppContext';
+import { registerDeliveryBoyPushNotificationsAsync, triggerForegroundDeliveryAssignedNotification } from '../../services/notifications';
+import OrderChimeSound from '../../components/OrderChimeSound';
 
 export default function DeliveryBoyScreen() {
   const insets = useSafeAreaInsets();
-  const { apiBaseUrl, socket } = useApp();
+  const { apiBaseUrl, socket, deliveryUser, logoutDelivery, isAuthLoaded } = useApp();
 
+  // Navigation: Only 2 main tabs for delivery partner: 'ORDERS' and 'PROFILE'
+  const [mainTab, setMainTab] = useState('ORDERS'); // 'ORDERS' | 'PROFILE'
+
+  // Orders State
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState('ACTIVE'); // 'ACTIVE' | 'COMPLETED'
-  const [riderName, setRiderName] = useState('Ramesh (Express Delivery)');
+  const [ordersSubTab, setOrdersSubTab] = useState('ACTIVE'); // 'ACTIVE' | 'COMPLETED'
+  const riderName = deliveryUser?.name || 'Delivery Partner';
 
   // OTP Verification Modal State
   const [selectedOrderForOtp, setSelectedOrderForOtp] = useState(null);
@@ -34,15 +46,58 @@ export default function DeliveryBoyScreen() {
   const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [otpError, setOtpError] = useState('');
 
+  // Live Incoming Assignment Alert & Sound State
+  const [incomingAssignedOrder, setIncomingAssignedOrder] = useState(null);
+  const [isPlayingChime, setIsPlayingChime] = useState(false);
+
   const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
     try {
       Haptics.impactAsync(style);
-    } catch (_e) {}
+    } catch (_e) { }
   };
+
+  // Auth Guard: Delivery boy only screen
+  useEffect(() => {
+    if (isAuthLoaded && !deliveryUser) {
+      router.replace('/');
+    }
+  }, [isAuthLoaded, deliveryUser]);
+
+  // Hardware Back Button: Prevent leaving delivery mode without explicit logout
+  useEffect(() => {
+    const onBackPress = () => {
+      if (mainTab === 'PROFILE') {
+        setMainTab('ORDERS');
+        return true;
+      }
+      Alert.alert(
+        'Exit Delivery Shift',
+        'Do you want to end your shift and log out?',
+        [
+          { text: 'Stay Online', style: 'cancel' },
+          {
+            text: 'Logout Shift',
+            style: 'destructive',
+            onPress: async () => {
+              await logoutDelivery();
+              router.replace('/');
+            }
+          }
+        ]
+      );
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [mainTab, logoutDelivery]);
 
   const fetchOrders = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBaseUrl}/orders`);
+      const url = deliveryUser?.mobile
+        ? `${apiBaseUrl}/orders/rider/${deliveryUser.mobile}`
+        : `${apiBaseUrl}/orders`;
+      const res = await fetch(url);
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
         setOrders(data.data);
@@ -53,29 +108,89 @@ export default function DeliveryBoyScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, deliveryUser]);
+
+  // Register push token for delivery alerts (background & closed app)
+  useEffect(() => {
+    if (deliveryUser && apiBaseUrl) {
+      registerDeliveryBoyPushNotificationsAsync(apiBaseUrl, deliveryUser).catch(() => { });
+    }
+  }, [deliveryUser, apiBaseUrl]);
+
+  // Handle incoming delivery dispatch alert
+  const notifyIncomingAssignment = useCallback((order) => {
+    if (!order) return;
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy), 300);
+      setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy), 650);
+    } catch (_e) { }
+
+    setIsPlayingChime(true);
+    setIncomingAssignedOrder(order);
+    triggerForegroundDeliveryAssignedNotification(order);
+    setMainTab('ORDERS');
+    setOrdersSubTab('ACTIVE');
+    fetchOrders();
+  }, [fetchOrders]);
+
+  const handleDismissIncoming = () => {
+    setIsPlayingChime(false);
+    setIncomingAssignedOrder(null);
+  };
+
+  const handleAcceptIncoming = () => {
+    setIsPlayingChime(false);
+    setIncomingAssignedOrder(null);
+    setMainTab('ORDERS');
+    setOrdersSubTab('ACTIVE');
+  };
 
   useEffect(() => {
     fetchOrders();
 
     if (socket) {
+      const isMyOrder = (o) => {
+        if (!o || !deliveryUser) return false;
+        const myId = String(deliveryUser._id || '');
+        const myPhone = String(deliveryUser.mobile || '').replace(/\D/g, '').slice(-10);
+        const orderRiderId = String(o.deliveryBoyId || '');
+        const orderPhone = String(o.riderPhone || '').replace(/\D/g, '').slice(-10);
+        return (orderRiderId && orderRiderId === myId) || (orderPhone && myPhone && orderPhone === myPhone);
+      };
+
       const handleNewOrder = (newOrder) => {
         setOrders(prev => [newOrder, ...prev.filter(o => o._id !== newOrder._id)]);
+        if (newOrder.status === 'OUT_FOR_DELIVERY' && isMyOrder(newOrder)) {
+          notifyIncomingAssignment(newOrder);
+        }
       };
 
       const handleStatusUpdate = (updatedOrder) => {
         setOrders(prev => prev.map(o => o._id === updatedOrder._id ? updatedOrder : o));
+        if (updatedOrder.status === 'OUT_FOR_DELIVERY' && isMyOrder(updatedOrder)) {
+          notifyIncomingAssignment(updatedOrder);
+        }
+      };
+
+      const handleDeliveryAssigned = (data) => {
+        const assignedOrder = data?.order || data;
+        if (isMyOrder(assignedOrder)) {
+          notifyIncomingAssignment(assignedOrder);
+        }
       };
 
       socket.on('newOrder', handleNewOrder);
       socket.on('orderStatusUpdate', handleStatusUpdate);
+      socket.on('deliveryAssigned', handleDeliveryAssigned);
 
       return () => {
         socket.off('newOrder', handleNewOrder);
         socket.off('orderStatusUpdate', handleStatusUpdate);
+        socket.off('deliveryAssigned', handleDeliveryAssigned);
       };
     }
-  }, [fetchOrders, socket]);
+  }, [fetchOrders, socket, deliveryUser, notifyIncomingAssignment]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -92,14 +207,17 @@ export default function DeliveryBoyScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: 'OUT_FOR_DELIVERY',
-          riderName,
-          riderPhone: '9876543210'
+          riderName: deliveryUser?.name || 'Store Rider',
+          riderPhone: deliveryUser?.mobile || '',
+          deliveryBoyId: deliveryUser?._id || ''
         })
       });
       const data = await res.json();
       if (data.success) {
         Alert.alert('🛵 Out for Delivery', `Order #${order.orderNo} dispatched. Navigate to customer doorstep.`);
         fetchOrders();
+      } else {
+        Alert.alert('Cannot Start Delivery', data.message || 'Status update failed.');
       }
     } catch (e) {
       Alert.alert('Error', 'Could not update order status.');
@@ -139,7 +257,7 @@ export default function DeliveryBoyScreen() {
       if (data.success) {
         try {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch (_e) {}
+        } catch (_e) { }
 
         setSelectedOrderForOtp(null);
         Alert.alert(
@@ -150,7 +268,7 @@ export default function DeliveryBoyScreen() {
       } else {
         try {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        } catch (_e) {}
+        } catch (_e) { }
         setOtpError(data.message || 'Incorrect OTP code. Ask customer to verify.');
       }
     } catch (e) {
@@ -160,7 +278,7 @@ export default function DeliveryBoyScreen() {
     }
   };
 
-  // 1-Tap Google Maps Navigation (Prioritizes GPS Coordinates)
+  // 1-Tap Google Maps Navigation
   const openNavigation = (order) => {
     triggerHaptic();
     let url = '';
@@ -187,296 +305,554 @@ export default function DeliveryBoyScreen() {
   // Filter orders
   const activeOrders = orders.filter(o => ['ACCEPTED', 'OUT_FOR_DELIVERY', 'PENDING'].includes(o.status));
   const completedOrders = orders.filter(o => o.status === 'DELIVERED');
-  const displayedOrders = activeTab === 'ACTIVE' ? activeOrders : completedOrders;
+  const displayedOrders = ordersSubTab === 'ACTIVE' ? activeOrders : completedOrders;
+
+  // Confirm shift logout
+  const handleShiftLogout = () => {
+    triggerHaptic();
+    Alert.alert(
+      'End Delivery Shift',
+      'Are you sure you want to clock out and log out of the delivery portal?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'End Shift & Logout',
+          style: 'destructive',
+          onPress: async () => {
+            await logoutDelivery();
+            router.replace('/');
+          }
+        }
+      ]
+    );
+  };
 
   return (
     <SafeAreaView edges={['top']} className="flex-1 bg-[#F8FAFC]">
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* ── Rider Top Header Bar ── */}
-      <View className="bg-white border-b border-slate-200 px-5 pt-3 pb-4 shadow-xs">
+      {/* ── Top Header Bar (No Back Button - Dedicated Delivery Portal) ── */}
+      <View className="bg-white border-b border-slate-200 px-5 pt-3 pb-3.5 shadow-xs">
         <View className="flex-row items-center justify-between">
           <View className="flex-row items-center flex-1">
-            <TouchableOpacity
-              onPress={() => {
-                triggerHaptic();
-                if (router.canGoBack()) router.back();
-                else router.replace('/');
-              }}
-              className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 items-center justify-center mr-3 active:bg-slate-200"
-            >
-              <Ionicons name="arrow-back" size={20} color="#0F172A" />
-            </TouchableOpacity>
+            <View className="w-10 h-10 rounded-2xl bg-amber-100 border border-amber-200 items-center justify-center mr-3 shadow-xs">
+              <Ionicons
+                name={mainTab === 'ORDERS' ? 'bicycle' : 'person'}
+                size={22}
+                color="#B45309"
+              />
+            </View>
 
             <View>
               <View className="flex-row items-center">
-                <Text className="text-xl font-black text-slate-900 tracking-tight mr-2">
-                  Delivery Partner
+                <Text className="text-lg font-black text-slate-900 tracking-tight mr-2">
+                  {mainTab === 'ORDERS' ? 'My Deliveries' : 'Rider Profile'}
                 </Text>
-                <View className="bg-emerald-100 px-2 py-0.5 rounded-full flex-row items-center">
+                {/* <View className="bg-emerald-100 px-2 py-0.5 rounded-full flex-row items-center">
                   <View className="w-1.5 h-1.5 rounded-full bg-emerald-600 mr-1" />
-                  <Text className="text-[10px] font-black text-emerald-800">ONLINE</Text>
-                </View>
+                  <Text className="text-[10px] font-black text-emerald-800">ON DUTY</Text>
+                </View> */}
               </View>
               <Text className="text-xs font-bold text-slate-500">
-                {riderName} • Express 10m Fleet
+                {riderName} • Supermart
               </Text>
             </View>
           </View>
 
-          {/* Quick Refresh */}
-          <TouchableOpacity
-            onPress={onRefresh}
-            className="w-10 h-10 rounded-full bg-slate-100 items-center justify-center active:bg-slate-200"
-          >
-            <Ionicons name="refresh" size={18} color="#0F172A" />
-          </TouchableOpacity>
+          {/* Top Right Quick Actions */}
+          <View className="flex-row items-center gap-2">
+            {mainTab === 'ORDERS' && (
+              <TouchableOpacity
+                onPress={onRefresh}
+                className="w-9 h-9 rounded-full bg-slate-100 items-center justify-center active:bg-slate-200"
+                title="Refresh"
+              >
+                <Ionicons name="refresh" size={17} color="#0F172A" />
+              </TouchableOpacity>
+            )}
+
+            {/* <TouchableOpacity
+              onPress={handleShiftLogout}
+              className="w-9 h-9 rounded-full bg-rose-50 border border-rose-200 items-center justify-center active:bg-rose-100"
+              title="Logout Shift"
+            >
+              <Ionicons name="log-out-outline" size={17} color="#E11D48" />
+            </TouchableOpacity> */}
+          </View>
         </View>
 
-        {/* ── Active vs Completed Tabs ── */}
-        <View className="flex-row mt-4 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-          <TouchableOpacity
-            onPress={() => {
-              triggerHaptic();
-              setActiveTab('ACTIVE');
-            }}
-            activeOpacity={0.8}
-            className={`flex-1 py-2 rounded-xl items-center flex-row justify-center ${
-              activeTab === 'ACTIVE' ? 'bg-slate-900 shadow-sm' : ''
-            }`}
-          >
-            <Ionicons
-              name="bicycle"
-              size={15}
-              color={activeTab === 'ACTIVE' ? '#F7C400' : '#64748B'}
-              style={{ marginRight: 6 }}
-            />
-            <Text className={`text-xs font-black ${
-              activeTab === 'ACTIVE' ? 'text-white' : 'text-slate-600'
-            }`}>
-              Active Deliveries ({activeOrders.length})
-            </Text>
-          </TouchableOpacity>
+        {/* ── If on ORDERS tab: Show Active vs Completed sub-tabs ── */}
+        {mainTab === 'ORDERS' && (
+          <View className="flex-row mt-3 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+            <TouchableOpacity
+              onPress={() => {
+                triggerHaptic();
+                setOrdersSubTab('ACTIVE');
+              }}
+              activeOpacity={0.8}
+              className={`flex-1 py-2 rounded-xl items-center flex-row justify-center ${ordersSubTab === 'ACTIVE' ? 'bg-slate-900 shadow-sm' : ''
+                }`}
+            >
+              <Ionicons
+                name="bicycle"
+                size={14}
+                color={ordersSubTab === 'ACTIVE' ? '#F7C400' : '#64748B'}
+                style={{ marginRight: 6 }}
+              />
+              <Text className={`text-xs font-black ${ordersSubTab === 'ACTIVE' ? 'text-white' : 'text-slate-600'
+                }`}>
+                Active ({activeOrders.length})
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => {
-              triggerHaptic();
-              setActiveTab('COMPLETED');
-            }}
-            activeOpacity={0.8}
-            className={`flex-1 py-2 rounded-xl items-center flex-row justify-center ${
-              activeTab === 'COMPLETED' ? 'bg-slate-900 shadow-sm' : ''
-            }`}
-          >
-            <Ionicons
-              name="checkmark-circle"
-              size={15}
-              color={activeTab === 'COMPLETED' ? '#F7C400' : '#64748B'}
-              style={{ marginRight: 6 }}
-            />
-            <Text className={`text-xs font-black ${
-              activeTab === 'COMPLETED' ? 'text-white' : 'text-slate-600'
-            }`}>
-              Completed ({completedOrders.length})
-            </Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              onPress={() => {
+                triggerHaptic();
+                setOrdersSubTab('COMPLETED');
+              }}
+              activeOpacity={0.8}
+              className={`flex-1 py-2 rounded-xl items-center flex-row justify-center ${ordersSubTab === 'COMPLETED' ? 'bg-slate-900 shadow-sm' : ''
+                }`}
+            >
+              <Ionicons
+                name="checkmark-circle"
+                size={14}
+                color={ordersSubTab === 'COMPLETED' ? '#F7C400' : '#64748B'}
+                style={{ marginRight: 6 }}
+              />
+              <Text className={`text-xs font-black ${ordersSubTab === 'COMPLETED' ? 'text-white' : 'text-slate-600'
+                }`}>
+                Delivered ({completedOrders.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
-      {/* ── Deliveries List ── */}
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#0F172A" />
-          <Text className="text-xs font-bold text-slate-500 mt-2">Loading deliveries...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={displayedOrders}
-          keyExtractor={item => item._id}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 16,
-            paddingBottom: Math.max(insets.bottom, 16) + 40
-          }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#F7C400"
-            />
-          }
-          ListEmptyComponent={() => (
-            <View className="items-center justify-center py-20 px-6">
-              <View className="w-20 h-20 rounded-full bg-slate-200 items-center justify-center mb-4">
-                <Ionicons name="cube-outline" size={36} color="#64748B" />
-              </View>
-              <Text className="text-base font-black text-slate-800 text-center">
-                {activeTab === 'ACTIVE' ? 'No Active Deliveries Right Now' : 'No Completed Deliveries Yet'}
-              </Text>
-              <Text className="text-xs font-medium text-slate-500 text-center mt-1 max-w-[260px]">
-                {activeTab === 'ACTIVE'
-                  ? 'All assigned orders are completed. New online orders from customers will appear here in real time.'
-                  : 'Delivered orders verified with OTP will be logged here.'}
-              </Text>
-            </View>
-          )}
-          renderItem={({ item }) => {
-            const isOutForDelivery = item.status === 'OUT_FOR_DELIVERY';
-            const isAccepted = item.status === 'ACCEPTED';
-            const isDelivered = item.status === 'DELIVERED';
-            const isPending = item.status === 'PENDING';
-            const isCod = item.paymentMethod === 'COD';
-
-            return (
-              <View className="bg-white rounded-3xl p-4.5 mb-4 border border-slate-200/90 shadow-sm">
-                
-                {/* ── Card Header: Order # & Status Badge ── */}
-                <View className="flex-row items-center justify-between pb-3 border-b border-slate-100">
-                  <View>
-                    <View className="flex-row items-center">
-                      <Text className="text-base font-black text-slate-900 mr-2">
-                        #{item.orderNo}
-                      </Text>
-                      {item.location?.latitude && (
-                        <View className="bg-emerald-100 px-2 py-0.5 rounded-md flex-row items-center">
-                          <Ionicons name="pin" size={10} color="#065F46" />
-                          <Text className="text-[10px] font-black text-emerald-800 ml-0.5">GPS PINNED</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text className="text-[10px] font-semibold text-slate-400 mt-0.5">
-                      {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {item.items?.length || 0} items
-                    </Text>
-                  </View>
-
-                  {/* Cash or Online Badge */}
-                  <View className={`px-2.5 py-1 rounded-xl border ${
-                    isCod ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-300'
-                  }`}>
-                    <Text className={`text-[10px] font-black uppercase ${
-                      isCod ? 'text-amber-900' : 'text-emerald-800'
-                    }`}>
-                      {isCod ? `💵 COLLECT ₹${item.totalAmount}` : `✅ PAID ONLINE`}
-                    </Text>
-                  </View>
+      {/* ══════════════════════════════════════════════════════
+          BODY: ORDERS SCREEN OR PROFILE SCREEN ONLY
+          ══════════════════════════════════════════════════════ */}
+      {mainTab === 'ORDERS' ? (
+        /* ── 1. ORDERS VIEW ── */
+        loading ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" color="#0F172A" />
+            <Text className="text-xs font-bold text-slate-500 mt-2">Loading deliveries...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={displayedOrders}
+            keyExtractor={item => item._id}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            contentContainerStyle={{
+              paddingHorizontal: 16,
+              paddingTop: 16,
+              paddingBottom: Math.max(insets.bottom, 16) + 75
+            }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#F7C400"
+              />
+            }
+            ListEmptyComponent={() => (
+              <View className="items-center justify-center py-20 px-6">
+                <View className="w-20 h-20 rounded-full bg-slate-200 items-center justify-center mb-4">
+                  <Ionicons name="cube-outline" size={36} color="#64748B" />
                 </View>
+                <Text className="text-base font-black text-slate-800 text-center">
+                  {ordersSubTab === 'ACTIVE' ? 'No Active Deliveries' : 'No Completed Deliveries'}
+                </Text>
+                <Text className="text-xs font-medium text-slate-500 text-center mt-1 max-w-[260px]">
+                  {ordersSubTab === 'ACTIVE'
+                    ? 'Orders dispatched by the store owner will appear here in real time.'
+                    : 'Delivered orders verified with OTP will be listed here.'}
+                </Text>
+              </View>
+            )}
+            renderItem={({ item }) => {
+              const isOutForDelivery = item.status === 'OUT_FOR_DELIVERY';
+              const isAccepted = item.status === 'ACCEPTED';
+              const isDelivered = item.status === 'DELIVERED';
+              const isPending = item.status === 'PENDING';
+              const isCod = item.paymentMethod === 'COD';
 
-                {/* ── Customer Info Box ── */}
-                <View className="bg-[#F8FAFC] rounded-2xl p-3 my-3 border border-slate-200/80">
-                  <View className="flex-row items-center justify-between mb-2">
-                    <View className="flex-row items-center flex-1 mr-2">
-                      <Ionicons name="person-circle" size={18} color="#0F172A" style={{ marginRight: 6 }} />
-                      <Text className="text-sm font-black text-slate-900" numberOfLines={1}>
-                        {item.customerName}
+              return (
+                <View className="bg-white rounded-3xl p-3 mb-4 border border-slate-200 shadow-sm">
+
+                  {/* Card Header: Order # & Status Badge */}
+                  <View className="flex-row items-center justify-between pb-3.5 border-b border-slate-100">
+                    <View>
+                      <View className="flex-row items-center">
+                        <Text className="text-lg font-black text-slate-900 mr-2">
+                          #{item.orderNo}
+                        </Text>
+                        {item.location?.latitude ? (
+                          <View className="bg-emerald-100 px-2.5 py-0.5 rounded-full flex-row items-center">
+                            <Ionicons name="location" size={11} color="#065F46" />
+                            <Text className="text-[10px] font-black text-emerald-800 ml-1">GPS PINNED</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text className="text-[11px] font-semibold text-slate-400 mt-1">
+                        {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {item.items?.length || 0} item{(item.items?.length || 0) === 1 ? '' : 's'}
                       </Text>
                     </View>
 
-                    {/* 1-Tap Phone Call */}
-                    <TouchableOpacity
-                      onPress={() => callCustomer(item.phone)}
-                      activeOpacity={0.8}
-                      className="bg-emerald-600 px-3 py-1.5 rounded-xl flex-row items-center"
-                    >
-                      <Ionicons name="call" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
-                      <Text className="text-[11px] font-black text-white">Call</Text>
-                    </TouchableOpacity>
+                    {/* Cash or Online Badge */}
+                    <View className={`px-3 py-1.5 rounded-xl border ${isCod ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-300'
+                      }`}>
+                      <Text className={`text-[11px] font-black uppercase ${isCod ? 'text-amber-900' : 'text-emerald-800'
+                        }`}>
+                        {isCod ? `💵 COLLECT ₹${item.totalAmount}` : `✅ PAID ONLINE`}
+                      </Text>
+                    </View>
                   </View>
 
-                  {/* Address with 1-Tap Google Map Navigation */}
-                  <View className="pt-2 border-t border-slate-200/60 flex-row items-start justify-between">
-                    <View className="flex-1 mr-3">
+                  {/* Customer Info Box */}
+                  <View className="bg-slate-50 rounded-2xl p-4 my-3.5 border border-slate-200/80">
+                    {/* Customer Name & Phone */}
+                    <View className="flex-row items-center justify-between mb-3">
+                      <View className="flex-row items-center flex-1 mr-2">
+                        <View className="w-8 h-8 rounded-full bg-slate-200 items-center justify-center mr-2.5">
+                          <Ionicons name="person" size={16} color="#0F172A" />
+                        </View>
+                        <View className="flex-1">
+                          <Text className="text-sm font-black text-slate-900" numberOfLines={1}>
+                            {item.customerName}
+                          </Text>
+                          <Text className="text-[11px] font-semibold text-slate-500">
+                            +91 {item.phone}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Delivery Address */}
+                    <View className="pt-2.5 border-t border-slate-200/70 mb-3.5">
                       <View className="flex-row items-start">
-                        <Ionicons name="location" size={14} color="#D97706" style={{ marginRight: 5, marginTop: 1 }} />
-                        <Text className="text-xs font-semibold text-slate-700 flex-1 leading-snug">
+                        <Ionicons name="navigate-circle" size={18} color="#D97706" style={{ marginRight: 6, marginTop: 1 }} />
+                        <Text className="text-xs font-semibold text-slate-700 flex-1 leading-relaxed">
                           {item.deliveryAddress} {item.pincode ? `(${item.pincode})` : ''}
                         </Text>
                       </View>
 
                       {item.location?.landmark ? (
-                        <Text className="text-[10px] font-bold text-slate-500 ml-5 mt-1">
-                          Landmark: {item.location.landmark}
-                        </Text>
+                        <View className="flex-row items-center mt-1.5 ml-6">
+                          <Ionicons name="flag-outline" size={12} color="#64748B" style={{ marginRight: 4 }} />
+                          <Text className="text-[11px] font-bold text-slate-500">
+                            Landmark: {item.location.landmark}
+                          </Text>
+                        </View>
                       ) : null}
                     </View>
 
-                    {/* Open in Google Maps Navigation Button */}
-                    <TouchableOpacity
-                      onPress={() => openNavigation(item)}
-                      activeOpacity={0.8}
-                      className="bg-blue-600 px-3 py-2 rounded-xl flex-row items-center shadow-xs"
-                    >
-                      <Ionicons name="navigate" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-                      <Text className="text-[11px] font-black text-white">Navigate</Text>
-                    </TouchableOpacity>
+                    {/* Dedicated Quick Action Buttons Bar: Call & Navigation */}
+                    <View className="flex-row gap-2.5">
+                      <TouchableOpacity
+                        onPress={() => callCustomer(item.phone)}
+                        activeOpacity={0.8}
+                        className="flex-1 bg-emerald-600 py-2.5 px-3 rounded-xl flex-row items-center justify-center shadow-xs"
+                      >
+                        <Ionicons name="call" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <Text className="text-xs font-black text-white">Call Customer</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => openNavigation(item)}
+                        activeOpacity={0.8}
+                        className="flex-1 bg-blue-600 py-2.5 px-3 rounded-xl flex-row items-center justify-center shadow-xs"
+                      >
+                        <Ionicons name="navigate" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <Text className="text-xs font-black text-white">Open in Maps</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
 
-                {/* ── Items Summary ── */}
-                <View className="mb-3 px-1">
-                  <Text className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
-                    ORDER ITEMS
-                  </Text>
-                  {item.items?.map((prod, pIdx) => (
-                    <Text key={pIdx} className="text-xs font-bold text-slate-700 py-0.5">
-                      • {prod.name} ({prod.quantity} {prod.unit || 'pc'})
+                  {/* Order Items Summary Box */}
+                  <View className="bg-slate-50/70 rounded-2xl p-3.5 mb-3.5 border border-slate-200/60">
+                    <Text className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">
+                      ORDER ITEMS ({item.items?.length || 0})
                     </Text>
-                  ))}
-                </View>
-
-                {/* ── Status Actions ── */}
-                {isPending && (
-                  <View className="bg-amber-50 p-2.5 rounded-xl border border-amber-200">
-                    <Text className="text-xs font-bold text-amber-800 text-center">
-                      Store is currently packing this order.
-                    </Text>
+                    {item.items?.map((prod, pIdx) => (
+                      <View key={pIdx} className="flex-row items-center justify-between py-1 border-b border-slate-100 last:border-b-0">
+                        <Text className="text-xs font-bold text-slate-800 flex-1 mr-2" numberOfLines={1}>
+                          • {prod.name}
+                        </Text>
+                        <View className="bg-white border border-slate-200 px-2 py-0.5 rounded-lg">
+                          <Text className="text-[10px] font-black text-slate-600">
+                            {prod.quantity} {prod.unit || 'pc'}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
                   </View>
-                )}
 
-                {isAccepted && (
-                  <TouchableOpacity
-                    onPress={() => handleStartDelivery(item)}
-                    activeOpacity={0.85}
-                    className="bg-violet-600 rounded-2xl py-3.5 items-center justify-center flex-row shadow-md"
-                  >
-                    <Ionicons name="bicycle" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text className="text-white font-black text-sm">
-                      PICK UP & START DELIVERY ➔
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {isOutForDelivery && (
-                  <TouchableOpacity
-                    onPress={() => handleOpenOtpModal(item)}
-                    activeOpacity={0.85}
-                    className="bg-emerald-600 rounded-2xl py-3.5 items-center justify-center flex-row shadow-md"
-                  >
-                    <Ionicons name="key" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text className="text-white font-black text-sm">
-                      ENTER CUSTOMER OTP TO CONFIRM DELIVERY
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {isDelivered && (
-                  <View className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl flex-row items-center justify-between">
-                    <View className="flex-row items-center">
-                      <Ionicons name="checkmark-circle" size={16} color="#059669" style={{ marginRight: 6 }} />
-                      <Text className="text-xs font-black text-emerald-900">
-                        Handed Over & Verified
+                  {/* Status Actions */}
+                  {isPending && (
+                    <View className="bg-amber-50 p-3 rounded-2xl border border-amber-200">
+                      <Text className="text-xs font-bold text-amber-800 text-center">
+                        Store is currently packing this order.
                       </Text>
                     </View>
-                    <Text className="text-[10px] font-bold text-emerald-700">
-                      OTP Confirmed
-                    </Text>
-                  </View>
-                )}
+                  )}
 
-              </View>
-            );
+                  {isAccepted && (
+                    <TouchableOpacity
+                      onPress={() => handleStartDelivery(item)}
+                      activeOpacity={0.85}
+                      className="bg-violet-600 rounded-2xl py-3.5 px-4 items-center justify-center flex-row shadow-md"
+                    >
+                      <Ionicons name="bicycle" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                      <Text className="text-white font-black text-sm">
+                        PICK UP & START DELIVERY ➔
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {isOutForDelivery && (
+                    <TouchableOpacity
+                      onPress={() => handleOpenOtpModal(item)}
+                      activeOpacity={0.85}
+                      className="bg-emerald-600 rounded-2xl py-3.5 px-4 items-center justify-center flex-row shadow-md"
+                    >
+                      <Ionicons name="key" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                      <Text className="text-white font-bold text-md">
+                        ENTER CUSTOMER OTP
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {isDelivered && (
+                    <View className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl flex-row items-center justify-between">
+                      <View className="flex-row items-center">
+                        <Ionicons name="checkmark-circle" size={18} color="#059669" style={{ marginRight: 6 }} />
+                        <Text className="text-xs font-black text-emerald-900">
+                          Handed Over & Verified
+                        </Text>
+                      </View>
+                      <View className="bg-emerald-100 px-2 py-0.5 rounded-md">
+                        <Text className="text-[10px] font-black text-emerald-800 uppercase">
+                          OTP Confirmed
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                </View>
+              );
+            }}
+          />
+        )
+      ) : (
+        /* ── 2. PROFILE VIEW ── */
+        <ScrollView
+          className="flex-1"
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 16,
+            paddingBottom: Math.max(insets.bottom, 16) + 80
           }}
-        />
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Hero Profile Card */}
+          <View className="bg-white rounded-3xl p-6 mb-4 border border-slate-200 shadow-sm items-center">
+            <View className="w-20 h-20 rounded-full bg-amber-100 border-4 border-amber-200 items-center justify-center mb-3 shadow-inner">
+              <Ionicons name="person" size={40} color="#B45309" />
+            </View>
+
+            <Text className="text-xl font-black text-slate-900 text-center">
+              {deliveryUser?.name || 'Delivery Partner'}
+            </Text>
+
+            <Text className="text-xs font-bold text-slate-500 text-center mt-1">
+              +91 {deliveryUser?.mobile || 'N/A'}
+            </Text>
+
+            <View className="mt-3 flex-row items-center gap-2">
+              <View className="bg-violet-100 px-3 py-1 rounded-full flex-row items-center border border-violet-200">
+                <Ionicons name="shield-checkmark" size={12} color="#6D28D9" style={{ marginRight: 4 }} />
+                <Text className="text-[11px] font-black text-violet-800">
+                  Authorized Delivery Partner
+                </Text>
+              </View>
+
+              <View className="bg-emerald-100 px-3 py-1 rounded-full flex-row items-center border border-emerald-200">
+                <View className="w-1.5 h-1.5 rounded-full bg-emerald-600 mr-1.5" />
+                <Text className="text-[11px] font-black text-emerald-800">
+                  Online
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Quick Metrics */}
+          <View className="flex-row gap-3 mb-4">
+            <View className="flex-1 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm items-center justify-center">
+              <Text className="text-2xl font-black text-emerald-600">
+                {completedOrders.length}
+              </Text>
+              <Text className="text-[11px] font-bold text-slate-500 mt-1">
+                Delivered
+              </Text>
+            </View>
+
+            <View className="flex-1 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm items-center justify-center">
+              <Text className="text-2xl font-black text-amber-600">
+                {activeOrders.length}
+              </Text>
+              <Text className="text-[11px] font-bold text-slate-500 mt-1">
+                Active Now
+              </Text>
+            </View>
+
+            <View className="flex-1 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm items-center justify-center">
+              <Text className="text-2xl font-black text-blue-600">
+                100%
+              </Text>
+              <Text className="text-[11px] font-bold text-slate-500 mt-1">
+                OTP Verified
+              </Text>
+            </View>
+          </View>
+
+          {/* Vehicle & Shift Details Card */}
+          <View className="bg-white rounded-3xl p-5 mb-4 border border-slate-200 shadow-sm">
+            <Text className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">
+              Shift & Vehicle Info
+            </Text>
+
+            <View className="flex-row items-center justify-between py-2.5 border-b border-slate-100">
+              <View className="flex-row items-center">
+                <Ionicons name="bicycle" size={18} color="#64748B" style={{ marginRight: 10 }} />
+                <Text className="text-xs font-bold text-slate-700">Vehicle Type</Text>
+              </View>
+              <Text className="text-xs font-black text-slate-900 capitalize">
+                {deliveryUser?.vehicleType || 'Motorcycle'}
+              </Text>
+            </View>
+
+            <View className="flex-row items-center justify-between py-2.5 border-b border-slate-100">
+              <View className="flex-row items-center">
+                <Ionicons name="card-outline" size={18} color="#64748B" style={{ marginRight: 10 }} />
+                <Text className="text-xs font-bold text-slate-700">Vehicle Number</Text>
+              </View>
+              <Text className="text-xs font-black text-slate-900 uppercase">
+                {deliveryUser?.vehicleNumber || 'Store Fleet'}
+              </Text>
+            </View>
+
+            <View className="flex-row items-center justify-between py-2.5 border-b border-slate-100">
+              <View className="flex-row items-center">
+                <Ionicons name="business-outline" size={18} color="#64748B" style={{ marginRight: 10 }} />
+                <Text className="text-xs font-bold text-slate-700">Store Assigned</Text>
+              </View>
+              <Text className="text-xs font-black text-slate-900">
+                Supermart Main Store
+              </Text>
+            </View>
+
+            <View className="flex-row items-center justify-between pt-2.5">
+              <View className="flex-row items-center">
+                <Ionicons name="key-outline" size={18} color="#64748B" style={{ marginRight: 10 }} />
+                <Text className="text-xs font-bold text-slate-700">Partner ID</Text>
+              </View>
+              <Text className="text-xs font-mono font-black text-slate-900">
+                #RIDER-{(deliveryUser?._id || '0000').slice(-6).toUpperCase()}
+              </Text>
+            </View>
+          </View>
+
+          {/* Delivery Safety & Policy */}
+          <View className="bg-blue-50 border border-blue-200 rounded-3xl p-4 mb-4 flex-row items-start">
+            <Ionicons name="information-circle" size={20} color="#1D4ED8" style={{ marginRight: 8, marginTop: 2 }} />
+            <View className="flex-1">
+              <Text className="text-xs font-black text-blue-900">
+                Delivery Instructions
+              </Text>
+              <Text className="text-[11px] font-medium text-blue-800 mt-0.5 leading-relaxed">
+                Always collect the 4-digit OTP from the customer before completing handoff. For COD orders, confirm exact cash collected before OTP submission.
+              </Text>
+            </View>
+          </View>
+
+          {/* Shift End / Logout Button */}
+          <TouchableOpacity
+            onPress={handleShiftLogout}
+            activeOpacity={0.85}
+            className="bg-rose-50 border border-rose-200 rounded-3xl py-4 px-5 flex-row items-center justify-center shadow-xs active:bg-rose-100"
+          >
+            <Ionicons name="log-out" size={20} color="#E11D48" style={{ marginRight: 8 }} />
+            <Text className="text-rose-600 font-black text-sm">
+              End Shift & Log Out
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       )}
+
+      {/* ══════════════════════════════════════════════════════
+          BOTTOM NAVIGATION BAR (ONLY ORDERS & PROFILE)
+          ══════════════════════════════════════════════════════ */}
+      <View
+        style={{ paddingBottom: Math.max(insets.bottom, 10) }}
+        className="bg-white border-t border-slate-200 px-6 pt-2 flex-row items-center justify-around shadow-lg"
+      >
+        {/* Tab 1: Orders */}
+        <TouchableOpacity
+          onPress={() => {
+            triggerHaptic();
+            setMainTab('ORDERS');
+          }}
+          activeOpacity={0.8}
+          className="items-center py-1 flex-1 relative"
+        >
+          <View className="relative">
+            <Ionicons
+              name={mainTab === 'ORDERS' ? 'bicycle' : 'bicycle-outline'}
+              size={24}
+              color={mainTab === 'ORDERS' ? '#0F172A' : '#94A3B8'}
+            />
+            {activeOrders.length > 0 && (
+              <View className="absolute -top-1.5 -right-3 bg-amber-500 rounded-full w-4 h-4 items-center justify-center border-2 border-white">
+                <Text className="text-[9px] font-black text-white">
+                  {activeOrders.length}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text className={`text-[11px] mt-1 font-black ${mainTab === 'ORDERS' ? 'text-slate-900' : 'text-slate-400'
+            }`}>
+            Orders
+          </Text>
+        </TouchableOpacity>
+
+        {/* Tab 2: Profile */}
+        <TouchableOpacity
+          onPress={() => {
+            triggerHaptic();
+            setMainTab('PROFILE');
+          }}
+          activeOpacity={0.8}
+          className="items-center py-1 flex-1 relative"
+        >
+          <View className="relative">
+            <Ionicons
+              name={mainTab === 'PROFILE' ? 'person' : 'person-outline'}
+              size={23}
+              color={mainTab === 'PROFILE' ? '#0F172A' : '#94A3B8'}
+            />
+            <View className="absolute -top-0.5 -right-1 bg-emerald-500 rounded-full w-2 h-2 border border-white" />
+          </View>
+          <Text className={`text-[11px] mt-1 font-black ${mainTab === 'PROFILE' ? 'text-slate-900' : 'text-slate-400'
+            }`}>
+            Profile
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* ══════════════════════════════════════════════════════
           OTP VERIFICATION MODAL
@@ -485,81 +861,211 @@ export default function DeliveryBoyScreen() {
         visible={!!selectedOrderForOtp}
         transparent
         animationType="fade"
-        onRequestClose={() => setSelectedOrderForOtp(null)}
+        onRequestClose={() => {
+          Keyboard.dismiss();
+          setSelectedOrderForOtp(null);
+        }}
       >
-        <View className="flex-1 bg-black/75 justify-center items-center px-5">
-          <View className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-200">
-            
-            <View className="items-center mb-3">
-              <View className="w-14 h-14 rounded-full bg-emerald-100 items-center justify-center mb-2">
-                <Ionicons name="shield-checkmark" size={28} color="#059669" />
-              </View>
-              <Text className="text-xl font-black text-slate-900">
-                Confirm Delivery
-              </Text>
-              <Text className="text-xs font-bold text-slate-500 text-center mt-1">
-                Order #{selectedOrderForOtp?.orderNo} • Ask customer for the 4-digit OTP shown in their app.
-              </Text>
-            </View>
-
-            {/* OTP Input */}
-            <View className="my-3">
-              <TextInput
-                className="bg-slate-50 border-2 border-slate-300 focus:border-emerald-500 rounded-2xl py-3 px-4 text-center text-2xl font-black tracking-widest text-slate-900"
-                keyboardType="numeric"
-                maxLength={4}
-                placeholder="• • • •"
-                placeholderTextColor="#94A3B8"
-                value={enteredOtp}
-                onChangeText={(val) => {
-                  setEnteredOtp(val);
-                  setOtpError('');
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+        >
+          {/* Tapping outside the card dismisses keyboard and closes the popup */}
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => {
+              Keyboard.dismiss();
+              setSelectedOrderForOtp(null);
+            }}
+            className="flex-1 bg-black/75 justify-center items-center px-5"
+          >
+            {/* Modal Card: Tapping empty area inside card dismisses keyboard but preserves modal */}
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={Keyboard.dismiss}
+              className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-200 relative"
+            >
+              {/* Top-Right Quick Close (X) Button */}
+              <TouchableOpacity
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setSelectedOrderForOtp(null);
                 }}
-                autoFocus
-              />
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-100 items-center justify-center z-10"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={18} color="#64748B" />
+              </TouchableOpacity>
 
-              {otpError ? (
-                <Text className="text-xs font-bold text-rose-600 text-center mt-2">
-                  {otpError}
+              <View className="items-center mb-3">
+                <View className="w-14 h-14 rounded-full bg-emerald-100 items-center justify-center mb-2">
+                  <Ionicons name="shield-checkmark" size={28} color="#059669" />
+                </View>
+                <Text className="text-xl font-black text-slate-900">
+                  Confirm Delivery
                 </Text>
-              ) : null}
+                <Text className="text-xs font-bold text-slate-500 text-center mt-1 pr-6 pl-6">
+                  Order #{selectedOrderForOtp?.orderNo} • Ask customer for the 4-digit OTP shown in their app.
+                </Text>
+              </View>
+
+              {/* OTP Input */}
+              <View className="my-3">
+                <TextInput
+                  className="bg-slate-50 border-2 border-slate-300 focus:border-emerald-500 rounded-2xl py-3 px-4 text-center text-2xl font-black tracking-widest text-slate-900"
+                  keyboardType="numeric"
+                  maxLength={4}
+                  placeholder="• • • •"
+                  placeholderTextColor="#94A3B8"
+                  value={enteredOtp}
+                  onChangeText={(val) => {
+                    setEnteredOtp(val);
+                    setOtpError('');
+                  }}
+                  autoFocus
+                />
+
+                {otpError ? (
+                  <Text className="text-xs font-bold text-rose-600 text-center mt-2">
+                    {otpError}
+                  </Text>
+                ) : null}
+              </View>
+
+              {/* If Cash on Delivery, remind rider */}
+              {selectedOrderForOtp?.paymentMethod === 'COD' && (
+                <View className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3 flex-row items-center">
+                  <Ionicons name="cash-outline" size={16} color="#D97706" style={{ marginRight: 6 }} />
+                  <Text className="text-xs font-black text-amber-900 flex-1">
+                    Collect ₹{selectedOrderForOtp.totalAmount} in Cash from customer.
+                  </Text>
+                </View>
+              )}
+
+              {/* Actions */}
+              <TouchableOpacity
+                onPress={handleVerifyOtp}
+                disabled={verifyingOtp}
+                activeOpacity={0.85}
+                className="w-full bg-emerald-600 rounded-2xl py-3.5 items-center justify-center mb-2 shadow-sm"
+              >
+                {verifyingOtp ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text className="text-white font-bold text-md">
+                    VERIFY OTP & COMPLETE DELIVERY
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setSelectedOrderForOtp(null);
+                }}
+                className="w-full bg-slate-100 rounded-xl py-2.5 items-center"
+              >
+                <Text className="text-slate-600 font-bold text-sm">Cancel</Text>
+              </TouchableOpacity>
+
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ══════════════════════════════════════════════════════
+          LIVE INCOMING ASSIGNMENT ALERT MODAL & AUDIBLE CHIME
+          ══════════════════════════════════════════════════════ */}
+      <OrderChimeSound isPlaying={isPlayingChime} />
+
+      <Modal
+        visible={Boolean(incomingAssignedOrder)}
+        transparent
+        animationType="slide"
+        onRequestClose={handleDismissIncoming}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={handleDismissIncoming}
+          className="flex-1 bg-black/80 justify-center items-center px-5"
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border-2 border-emerald-400 relative items-center"
+          >
+            {/* Animated Bike Icon Badge */}
+            <View className="w-20 h-20 rounded-full bg-emerald-100 border-4 border-emerald-300 items-center justify-center mb-3 shadow-inner">
+              <Ionicons name="bicycle" size={42} color="#059669" />
             </View>
 
-            {/* If Cash on Delivery, remind rider */}
-            {selectedOrderForOtp?.paymentMethod === 'COD' && (
-              <View className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3 flex-row items-center">
-                <Ionicons name="cash-outline" size={16} color="#D97706" style={{ marginRight: 6 }} />
-                <Text className="text-xs font-black text-amber-900 flex-1">
-                  Collect ₹{selectedOrderForOtp.totalAmount} in Cash from customer.
+            <View className="bg-emerald-600 px-3.5 py-1 rounded-full mb-2">
+              <Text className="text-[11px] font-black text-white tracking-widest uppercase">
+                🚨 NEW DELIVERY ASSIGNED
+              </Text>
+            </View>
+
+            <Text className="text-2xl font-black text-slate-900 text-center">
+              Order #{incomingAssignedOrder?.orderNo}
+            </Text>
+
+            <Text className="text-xs font-bold text-slate-500 text-center mt-1 mb-4">
+              The store owner has dispatched this delivery to you!
+            </Text>
+
+            {/* Customer & Address Details Card */}
+            <View className="w-full bg-slate-50 rounded-2xl p-4 border border-slate-200 mb-4">
+              <View className="flex-row items-center mb-2">
+                <Ionicons name="person" size={15} color="#475569" style={{ marginRight: 8 }} />
+                <Text className="text-sm font-black text-slate-900 flex-1">
+                  {incomingAssignedOrder?.customerName || 'Customer'}
+                </Text>
+              </View>
+
+              <View className="flex-row items-start mb-2">
+                <Ionicons name="location" size={16} color="#DC2626" style={{ marginRight: 8, marginTop: 1 }} />
+                <Text className="text-xs font-semibold text-slate-700 flex-1" numberOfLines={2}>
+                  {incomingAssignedOrder?.deliveryAddress || 'Address not specified'}
+                </Text>
+              </View>
+
+              <View className="flex-row items-center justify-between pt-2 border-t border-slate-200 mt-1">
+                <Text className="text-xs font-bold text-slate-500">Collect Amount:</Text>
+                <Text className="text-sm font-black text-emerald-700">
+                  ₹{incomingAssignedOrder?.totalAmount} ({incomingAssignedOrder?.paymentMethod || 'COD'})
+                </Text>
+              </View>
+            </View>
+
+            {/* Chime Sounding Indicator */}
+            {isPlayingChime && (
+              <View className="flex-row items-center mb-3 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
+                <Ionicons name="volume-high" size={14} color="#D97706" style={{ marginRight: 5 }} />
+                <Text className="text-[10px] font-extrabold text-amber-800">
+                  Ringing Order Bell • Tap Accept to Stop
                 </Text>
               </View>
             )}
 
-            {/* Actions */}
+            {/* Action Buttons */}
             <TouchableOpacity
-              onPress={handleVerifyOtp}
-              disabled={verifyingOtp}
+              onPress={handleAcceptIncoming}
               activeOpacity={0.85}
-              className="w-full bg-emerald-600 rounded-2xl py-3.5 items-center justify-center mb-2 shadow-md"
+              className="w-full bg-emerald-600 rounded-2xl py-3.5 items-center justify-center mb-2 shadow-lg shadow-emerald-600/30"
             >
-              {verifyingOtp ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Text className="text-white font-black text-sm">
-                  VERIFY OTP & COMPLETE DELIVERY
-                </Text>
-              )}
+              <Text className="text-white font-black text-sm tracking-wide">
+                ACCEPT & VIEW ORDER ➔
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => setSelectedOrderForOtp(null)}
+              onPress={handleDismissIncoming}
               className="w-full bg-slate-100 rounded-xl py-2.5 items-center"
             >
-              <Text className="text-slate-600 font-bold text-xs">Cancel</Text>
+              <Text className="text-slate-600 font-bold text-xs">Dismiss Alert</Text>
             </TouchableOpacity>
 
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
     </SafeAreaView>

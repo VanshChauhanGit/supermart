@@ -84,6 +84,8 @@ export function AppProvider({ children }) {
   const [cart, setCart] = useState([]);
   const [customerUser, setCustomerUser] = useState(null);
   const [customerToken, setCustomerToken] = useState(null);
+  const [deliveryUser, setDeliveryUser] = useState(null);
+  const [deliveryToken, setDeliveryToken] = useState(null);
   const [adminUser, setAdminUser] = useState(null);
   const [apiBaseUrl, setApiBaseUrl] = useState(getDefaultApiUrl());
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
@@ -119,11 +121,41 @@ export function AppProvider({ children }) {
             await storage.removeItem("supermart_mobile_customer_token");
           }
         }
+
+        const savedDelivery = await storage.getItem("supermart_mobile_delivery");
+        const savedDeliveryToken = await storage.getItem("supermart_mobile_delivery_token");
+
+        if (savedDelivery) {
+          if (savedDeliveryToken && isTokenValid(savedDeliveryToken)) {
+            setDeliveryUser(JSON.parse(savedDelivery));
+            setDeliveryToken(savedDeliveryToken);
+          } else {
+            await storage.removeItem("supermart_mobile_delivery");
+            await storage.removeItem("supermart_mobile_delivery_token");
+          }
+        }
+
+        const savedCart = await storage.getItem("supermart_mobile_cart");
+        if (savedCart) {
+          try {
+            const parsedCart = JSON.parse(savedCart);
+            if (Array.isArray(parsedCart)) {
+              setCart(parsedCart);
+            }
+          } catch (e) { }
+        }
       } catch (e) { }
       setIsAuthLoaded(true);
     };
     loadSavedSessions();
   }, []);
+
+  // Persist cart items across reloads and app restarts
+  useEffect(() => {
+    if (isAuthLoaded) {
+      storage.setItem("supermart_mobile_cart", JSON.stringify(cart));
+    }
+  }, [cart, isAuthLoaded]);
 
   const loginAdmin = useCallback(async (user) => {
     setAdminUser(user);
@@ -153,6 +185,25 @@ export function AppProvider({ children }) {
     setCustomerToken(null);
     await storage.removeItem("supermart_mobile_customer");
     await storage.removeItem("supermart_mobile_customer_token");
+  }, []);
+
+  /**
+   * loginDelivery — stores delivery boy session & token
+   */
+  const loginDelivery = useCallback(async (user, token) => {
+    setDeliveryUser(user);
+    setDeliveryToken(token || null);
+    await storage.setItem("supermart_mobile_delivery", JSON.stringify(user));
+    if (token) {
+      await storage.setItem("supermart_mobile_delivery_token", token);
+    }
+  }, []);
+
+  const logoutDelivery = useCallback(async () => {
+    setDeliveryUser(null);
+    setDeliveryToken(null);
+    await storage.removeItem("supermart_mobile_delivery");
+    await storage.removeItem("supermart_mobile_delivery_token");
   }, []);
 
   const addToCart = useCallback((product) => {
@@ -196,6 +247,10 @@ export function AppProvider({ children }) {
       setCustomerUser,
       loginCustomer,
       logoutCustomer,
+      deliveryUser,
+      deliveryToken,
+      loginDelivery,
+      logoutDelivery,
       adminUser,
       setAdminUser,
       loginAdmin,
@@ -214,6 +269,10 @@ export function AppProvider({ children }) {
       customerToken,
       loginCustomer,
       logoutCustomer,
+      deliveryUser,
+      deliveryToken,
+      loginDelivery,
+      logoutDelivery,
       adminUser,
       loginAdmin,
       logoutAdmin,

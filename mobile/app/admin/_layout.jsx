@@ -2,84 +2,51 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Tabs, Redirect, router } from 'expo-router';
 import { View, Text, Alert, ActivityIndicator, Vibration, Modal, TouchableOpacity, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useApp } from '../../context/AppContext';
-
-// Safe Sound Player that gracefully handles environments without ExponentAV (like Expo Go)
-const playSoundSafe = async () => {
-  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.Audio) {
-    try {
-      const audio = new window.Audio('https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3');
-      audio.play().catch(() => {});
-      return { stopAsync: async () => { audio.pause(); }, unloadAsync: async () => {} };
-    } catch (e) {}
-  }
-  try {
-    const { Audio } = require('expo-av');
-    if (Audio?.Sound) {
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: 'https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3' },
-        { shouldPlay: true, isLooping: false, volume: 1.0 }
-      );
-      return sound;
-    }
-  } catch (e) {
-    // ExponentAV native module not compiled into current client runtime (e.g. Expo Go)
-  }
-  return null;
-};
+import OrderChimeSound from '../../components/OrderChimeSound';
+import { registerForPushNotificationsAsync, triggerForegroundOrderNotification } from '../../services/notifications';
 
 // Safe Haptic feedback trigger
 const triggerHapticsSafe = () => {
   try {
-    const Haptics = require('expo-haptics');
     if (Haptics?.notificationAsync) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
     }
   } catch (e) {}
 };
 
 // Background Notifier Component with Audio, Haptic & Incoming Order Overlay
 function AdminOrderNotifier() {
-  const { socket } = useApp();
+  const { socket, apiBaseUrl } = useApp();
   const [incomingOrder, setIncomingOrder] = useState(null);
-  const soundRef = useRef(null);
 
-  const playChimeAndVibrate = async () => {
-    try {
-      // Haptics & Vibration loop (always works natively)
-      triggerHapticsSafe();
-      Vibration.vibrate([0, 500, 250, 500, 250, 500]);
-
-      // Play chime safely
-      const sound = await playSoundSafe();
-      if (sound) soundRef.current = sound;
-    } catch (e) {
-      Vibration.vibrate([0, 600, 300, 600]);
-    }
-  };
-
-  const stopAlert = async () => {
-    try {
-      Vibration.cancel();
-      if (soundRef.current) {
-        if (soundRef.current.stopAsync) await soundRef.current.stopAsync();
-        if (soundRef.current.unloadAsync) await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-    } catch (e) {}
-  };
+  // Register device for background push notifications when Admin Portal is active
+  useEffect(() => {
+    registerForPushNotificationsAsync(apiBaseUrl).catch(() => {});
+  }, [apiBaseUrl]);
 
   useEffect(() => {
     if (socket) {
       const handleNewOrder = (order) => {
         setIncomingOrder(order);
-        playChimeAndVibrate();
+
+        // 1. Trigger native push/local notification banner with alert sound
+        triggerForegroundOrderNotification(order);
+
+        // 2. Trigger native vibration and haptic pattern
+        triggerHapticsSafe();
+        try {
+          Vibration.vibrate([0, 500, 250, 500, 250, 500]);
+        } catch (_e) {}
       };
 
       socket.on('newOrder', handleNewOrder);
       return () => {
         socket.off('newOrder', handleNewOrder);
-        stopAlert();
+        try {
+          Vibration.cancel();
+        } catch (_e) {}
       };
     }
   }, [socket]);
@@ -87,12 +54,16 @@ function AdminOrderNotifier() {
   if (!incomingOrder) return null;
 
   return (
-    <Modal visible={!!incomingOrder} transparent animationType="slide">
-      <View className="flex-1 bg-slate-900/75 justify-center items-center p-5">
-        <View className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl items-center border-2 border-amber-300">
-          <View className="w-16 h-16 rounded-full bg-amber-100 items-center justify-center mb-3">
-            <Ionicons name="notifications" size={32} color="#D97706" />
-          </View>
+    <>
+      {/* Repeating Audible Order Chime (Web Audio / Mobile Headless Player) */}
+      <OrderChimeSound isPlaying={!!incomingOrder} />
+
+      <Modal visible={!!incomingOrder} transparent animationType="slide">
+        <View className="flex-1 bg-slate-900/75 justify-center items-center p-5">
+          <View className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl items-center border-2 border-amber-300">
+            <View className="w-16 h-16 rounded-full bg-amber-100 items-center justify-center mb-3">
+              <Ionicons name="notifications" size={32} color="#D97706" />
+            </View>
 
           <Text className="text-xl font-black text-slate-900 text-center">NEW ORDER RECEIVED!</Text>
           <Text className="text-sm font-bold text-[#1E3A8A] mt-1">#{incomingOrder.orderNo}</Text>
@@ -109,7 +80,7 @@ function AdminOrderNotifier() {
           <View className="w-full mt-5 gap-2">
             <TouchableOpacity
               onPress={() => {
-                stopAlert();
+                try { Vibration.cancel(); } catch (_e) {}
                 setIncomingOrder(null);
                 router.push('/admin/orders');
               }}
@@ -120,7 +91,7 @@ function AdminOrderNotifier() {
 
             <TouchableOpacity
               onPress={() => {
-                stopAlert();
+                try { Vibration.cancel(); } catch (_e) {}
                 setIncomingOrder(null);
               }}
               className="bg-slate-100 rounded-2xl py-3 items-center"
@@ -131,6 +102,7 @@ function AdminOrderNotifier() {
         </View>
       </View>
     </Modal>
+  </>
   );
 }
 

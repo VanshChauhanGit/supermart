@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   ActivityIndicator, StatusBar, ScrollView, Keyboard,
-  KeyboardAvoidingView, Platform
+  KeyboardAvoidingView, Platform, TouchableWithoutFeedback
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -12,7 +12,7 @@ import { useApp } from '../context/AppContext';
 export default function UnifiedAuthScreen() {
   const router = useRouter();
   const {
-    adminUser, customerUser, loginAdmin, loginCustomer,
+    adminUser, customerUser, deliveryUser, loginAdmin, loginCustomer, loginDelivery,
     apiBaseUrl, setApiBaseUrl, isAuthLoaded
   } = useApp();
 
@@ -57,10 +57,12 @@ export default function UnifiedAuthScreen() {
     if (!isAuthLoaded) return;
     if (adminUser) {
       router.replace('/admin/dashboard');
+    } else if (deliveryUser) {
+      router.replace('/delivery');
     } else if (customerUser) {
       router.replace('/customer');
     }
-  }, [isAuthLoaded, adminUser, customerUser]);
+  }, [isAuthLoaded, adminUser, deliveryUser, customerUser]);
 
   // Loading Gate
   if (!isAuthLoaded) {
@@ -106,6 +108,9 @@ export default function UnifiedAuthScreen() {
         if (data.data?.role === 'SUPER_ADMIN') {
           await loginAdmin(data.data);
           router.replace('/admin/dashboard');
+        } else if (data.data?.role === 'delivery_partner') {
+          await loginDelivery(data.data, data.token);
+          router.replace('/delivery');
         } else {
           await loginCustomer(data.data, data.token);
           router.replace('/customer');
@@ -208,12 +213,15 @@ export default function UnifiedAuthScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1, justifyContent: 'space-between' }}
+          contentContainerStyle={{ flexGrow: 1 }}
           className="px-5 pt-3 pb-6"
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
-          <View>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <View style={{ flexGrow: 1, justifyContent: 'space-between' }}>
+              <View>
             {/* ── Brand Header ── */}
             <View className="items-center mt-2 mb-5">
               {/* Yellow Glowing Logo Badge */}
@@ -500,27 +508,14 @@ export default function UnifiedAuthScreen() {
             </View>
           </View>
 
-          {/* ── Delivery Partner Direct Access Link ── */}
-          <View className="items-center px-4 mb-4">
-            <TouchableOpacity
-              onPress={() => router.push('/delivery')}
-              activeOpacity={0.8}
-              className="bg-white border border-slate-200 px-4 py-2.5 rounded-2xl flex-row items-center shadow-xs"
-            >
-              <Ionicons name="bicycle" size={16} color="#1E3A8A" style={{ marginRight: 6 }} />
-              <Text className="text-xs font-black text-[#1E3A8A]">
-                Delivery Partner Portal ➔
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ── Footer ── */}
-          <View className="items-center py-2">
-            <Text className="text-[11px] text-[#94A3B8] font-semibold">
-              Supermart POS & Delivery System © 2026
-            </Text>
-          </View>
-
+              {/* ── Footer ── */}
+              <View className="items-center py-2">
+                <Text className="text-[11px] text-[#94A3B8] font-semibold">
+                  Supermart POS & Delivery System © 2026
+                </Text>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -29,6 +29,7 @@ const onlineOrderSchema = new mongoose.Schema({
   },
   assignedDeliveryRider: { type: String, default: 'Unassigned' },
   riderPhone: { type: String, default: '' },
+  deliveryBoyId: { type: String, default: null },
   location: {
     latitude: { type: Number, default: null },
     longitude: { type: Number, default: null },

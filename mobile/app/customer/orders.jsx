@@ -254,13 +254,13 @@ export default function CustomerOrdersScreen() {
                 <Text className="text-lg font-black text-slate-900 tracking-tight mr-2">
                   My Orders
                 </Text>
-                <View className="bg-[#FEF08A] px-2 py-0.5 rounded-md flex-row items-center">
+                {/* <View className="bg-[#FEF08A] px-2 py-0.5 rounded-md flex-row items-center">
                   <Ionicons name="flash" size={10} color="#854D0E" />
                   <Text className="text-[10px] font-black text-[#854D0E] ml-0.5">LIVE TRACK</Text>
-                </View>
+                </View> */}
               </View>
               <Text className="text-[11px] font-semibold text-slate-500">
-                {orders.length} {orders.length === 1 ? 'order' : 'orders'} placed • Real-time status
+                {orders.length} {orders.length === 1 ? 'order' : 'orders'} placed
               </Text>
             </View>
           </View>
@@ -273,23 +273,21 @@ export default function CustomerOrdersScreen() {
             }}
             disabled={syncing}
             activeOpacity={0.7}
-            className="flex-row items-center bg-slate-100 border border-slate-200/90 px-3 py-1.5 rounded-full"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200/80 items-center justify-center active:bg-slate-200"
           >
             {syncing ? (
-              <ActivityIndicator size="small" color="#0F172A" style={{ marginRight: 4 }} />
+              <ActivityIndicator size="small" color="#0F172A" />
             ) : (
-              <Ionicons name="sync-outline" size={13} color="#0F172A" style={{ marginRight: 4 }} />
+              <Ionicons name="sync-outline" size={18} color="#0F172A" />
             )}
-            <Text className="text-[11px] font-black text-slate-900">
-              {syncing ? 'Syncing...' : 'Sync'}
-            </Text>
           </TouchableOpacity>
         </View>
 
         {/* ── Real-Time Status & Filter Tabs ── */}
         <View className="px-4 pb-2.5 pt-1">
           {/* Live Auto-Sync Status Bar */}
-          <View className="flex-row items-center justify-between bg-slate-50 border border-slate-200/80 px-3 py-1.5 rounded-xl mb-2.5">
+          {/* <View className="flex-row items-center justify-between bg-slate-50 border border-slate-200/80 px-3 py-1.5 rounded-xl mb-2.5">
             <View className="flex-row items-center">
               <View className="w-2 h-2 rounded-full bg-emerald-500 mr-2" />
               <Text className="text-[10px] font-black text-slate-700 tracking-wide uppercase">
@@ -302,7 +300,7 @@ export default function CustomerOrdersScreen() {
                 Updated {lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </Text>
             </View>
-          </View>
+          </View> */}
 
           {/* Filter Pills */}
           <View className="flex-row items-center space-x-2">
@@ -412,7 +410,7 @@ export default function CustomerOrdersScreen() {
             return (
               <View
                 key={order._id}
-                className="bg-white rounded-3xl p-4.5 mb-4 border border-slate-200/90 shadow-xs"
+                className="bg-white rounded-2xl p-3 mb-4 border border-slate-200/90 shadow-xs"
               >
                 {/* ── Order Top Bar: Number & Status Badge ── */}
                 <View className="flex-row items-center justify-between pb-3 border-b border-slate-100">
@@ -421,11 +419,11 @@ export default function CustomerOrdersScreen() {
                       <View className="w-7 h-7 rounded-lg bg-[#FEF3C7] items-center justify-center mr-2">
                         <Ionicons name="bag-handle" size={14} color="#D97706" />
                       </View>
-                      <Text className="text-sm font-black text-slate-900 tracking-tight">
+                      <Text className="text-md font-black text-slate-900 tracking-tight">
                         Order #{order.orderNo}
                       </Text>
                     </View>
-                    <Text className="text-[11px] font-semibold text-slate-400 mt-1 ml-9">
+                    <Text className="text-[11px] font-semibold text-slate-400 ml-9">
                       {order.createdAt
                         ? new Date(order.createdAt).toLocaleDateString('en-IN', {
                             day: 'numeric',
@@ -654,7 +652,7 @@ export default function CustomerOrdersScreen() {
 
                 {/* ── 4. Delivery Address & GPS Coordinates Badge ── */}
                 {order.deliveryAddress && (
-                  <View className="py-2 px-1 mb-1 bg-slate-50/70 rounded-xl px-2.5 border border-slate-100">
+                  <View className="py-2 mb-1 bg-slate-50/70 rounded-xl px-2.5 border border-slate-100">
                     <View className="flex-row items-center">
                       <Ionicons name="location-sharp" size={14} color="#D97706" style={{ marginRight: 6 }} />
                       <Text numberOfLines={1} className="text-xs font-semibold text-slate-600 flex-1">

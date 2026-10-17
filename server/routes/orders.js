@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const OnlineOrder = require('../models/OnlineOrder');
+const { sendOrderPushNotification, sendDeliveryBoyPushNotification } = require('../utils/pushNotifications');
 
 let memoryOrders = [
   {
     _id: 'ord_101',
-    orderNo: 'ORD-8821',
+    orderNo: 'ORD8821',
     customerName: 'Priya Verma',
     phone: '9898989898',
     deliveryAddress: 'Flat 401, Sun City Heights, Sector 12',
@@ -54,7 +55,7 @@ router.post('/', async (req, res) => {
       paymentMethod, notes, location, estimatedDeliveryMinutes 
     } = req.body;
 
-    const orderNo = 'ORD-' + Math.floor(1000 + Math.random() * 9000);
+    const orderNo = 'ORD' + Math.floor(1000 + Math.random() * 9000);
     const deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
 
     const cleanLocation = location ? {
@@ -131,6 +132,13 @@ router.post('/', async (req, res) => {
       io.emit('newOrder', newOrder);
     }
 
+    // Send push notification to Store Owner devices (works even if app is closed!)
+    try {
+      sendOrderPushNotification(newOrder).catch(err => {
+        console.warn('[Orders Push] Failed to dispatch background push:', err.message);
+      });
+    } catch (_e) {}
+
     res.status(201).json({ success: true, message: 'Online order placed successfully!', data: newOrder });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -154,11 +162,68 @@ router.get('/customer/:phone', async (req, res) => {
   }
 });
 
+// GET Orders for a specific Delivery Partner / Rider
+router.get('/rider/:phone', async (req, res) => {
+  try {
+    const rawPhone = req.params.phone;
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    let orders;
+    try {
+      orders = await OnlineOrder.find({
+        $or: [
+          { riderPhone: { $regex: cleanPhone } },
+          { deliveryBoyId: rawPhone }
+        ]
+      }).sort({ createdAt: -1 });
+    } catch (e) {
+      orders = memoryOrders.filter(o => 
+        (o.riderPhone && o.riderPhone.replace(/\D/g, '').includes(cleanPhone)) ||
+        (o.deliveryBoyId && o.deliveryBoyId === rawPhone)
+      );
+    }
+    res.json({ success: true, count: orders.length, data: orders });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // PUT Update Order Status & Assign Delivery Rider / Cancel Order
 router.put('/:id/status', async (req, res) => {
   try {
     const id = req.params.id;
-    const { status, riderName, riderPhone, notes } = req.body;
+    const { status, riderName, riderPhone, deliveryBoyId, notes } = req.body;
+
+    // ── Business Rule: A delivery boy cannot be assigned if already out on an active delivery ──
+    if (status === 'OUT_FOR_DELIVERY' && (deliveryBoyId || riderPhone)) {
+      const cleanRiderPhone = riderPhone ? riderPhone.replace(/\D/g, '') : null;
+      let busyOrder = null;
+
+      try {
+        const query = {
+          _id: { $ne: id },
+          status: 'OUT_FOR_DELIVERY',
+          $or: [
+            ...(deliveryBoyId ? [{ deliveryBoyId: String(deliveryBoyId) }] : []),
+            ...(cleanRiderPhone ? [{ riderPhone: { $regex: cleanRiderPhone } }] : [])
+          ]
+        };
+        busyOrder = await OnlineOrder.findOne(query);
+      } catch (e) {
+        busyOrder = memoryOrders.find(o => 
+          o._id !== id && 
+          o.status === 'OUT_FOR_DELIVERY' && 
+          ((deliveryBoyId && o.deliveryBoyId === deliveryBoyId) || 
+           (cleanRiderPhone && o.riderPhone && o.riderPhone.replace(/\D/g, '').includes(cleanRiderPhone)))
+        );
+      }
+
+      if (busyOrder) {
+        return res.status(400).json({
+          success: false,
+          message: `Delivery partner "${riderName || 'Rider'}" is already on an active delivery for Order #${busyOrder.orderNo}! Complete or deliver that order before assigning a new one.`
+        });
+      }
+    }
 
     let updated;
     try {
@@ -166,6 +231,7 @@ router.put('/:id/status', async (req, res) => {
       if (notes) updateFields.notes = notes;
       if (riderName) updateFields.assignedDeliveryRider = riderName;
       if (riderPhone) updateFields.riderPhone = riderPhone;
+      if (deliveryBoyId) updateFields.deliveryBoyId = deliveryBoyId;
 
       if (status === 'ACCEPTED') {
         updateFields['statusTimestamps.acceptedAt'] = new Date();
@@ -183,6 +249,7 @@ router.put('/:id/status', async (req, res) => {
         if (notes) memoryOrders[idx].notes = notes;
         if (riderName) memoryOrders[idx].assignedDeliveryRider = riderName;
         if (riderPhone) memoryOrders[idx].riderPhone = riderPhone;
+        if (deliveryBoyId) memoryOrders[idx].deliveryBoyId = deliveryBoyId;
         if (!memoryOrders[idx].statusTimestamps) {
           memoryOrders[idx].statusTimestamps = { placedAt: memoryOrders[idx].createdAt };
         }
@@ -195,6 +262,23 @@ router.put('/:id/status', async (req, res) => {
     const io = req.app.get('io');
     if (io) {
       io.emit('orderStatusUpdate', updated);
+      if (status === 'OUT_FOR_DELIVERY' || deliveryBoyId || riderPhone) {
+        io.emit('deliveryAssigned', {
+          order: updated,
+          deliveryBoyId: deliveryBoyId || updated?.deliveryBoyId,
+          riderPhone: riderPhone || updated?.riderPhone,
+          riderName: riderName || updated?.assignedDeliveryRider
+        });
+      }
+    }
+
+    // High-priority Push Notification to the assigned Delivery Boy
+    if (status === 'OUT_FOR_DELIVERY' && (deliveryBoyId || riderPhone || updated?.deliveryBoyId || updated?.riderPhone)) {
+      sendDeliveryBoyPushNotification({
+        order: updated,
+        deliveryBoyId: deliveryBoyId || updated?.deliveryBoyId,
+        riderPhone: riderPhone || updated?.riderPhone
+      }).catch(err => console.warn('[Orders] Rider push error:', err.message));
     }
 
     res.json({ success: true, message: `Order status updated to ${status}`, data: updated });

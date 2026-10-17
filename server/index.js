@@ -18,6 +18,7 @@ const uploadRoutes = require('./routes/upload');
 const categoryRoutes = require('./routes/categories');
 const offerRoutes = require('./routes/offers');
 const paytmRoutes = require('./routes/paytm');
+const voiceRoutes = require('./routes/voice');
 
 const app = express();
 const PORT = process.env.PORT || 5050;
@@ -59,6 +60,7 @@ app.use('/api/v1/upload', uploadRoutes);
 app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/offers', offerRoutes);
 app.use('/api/v1/paytm', paytmRoutes);
+app.use('/api/v1/voice', voiceRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

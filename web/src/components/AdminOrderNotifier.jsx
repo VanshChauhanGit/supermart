@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { Bell, CheckCircle, X, ExternalLink, Volume2, VolumeX, ArrowRight, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { SOCKET_URL } from '../config/api';
 
 // Synthesize loud attention-grabbing Swiggy/Zomato style order bell sequence
 const playContinuousChime = () => {
@@ -71,7 +72,7 @@ export default function AdminOrderNotifier({ onOrderReceived }) {
   }, [incomingOrder, soundEnabled]);
 
   useEffect(() => {
-    const socket = io('/', { path: '/socket.io' });
+    const socket = io(SOCKET_URL, { path: '/socket.io' });
 
     socket.on('connect', () => {
       console.log('[Socket] Connected to real-time order stream:', socket.id);

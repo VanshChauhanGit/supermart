@@ -50,7 +50,9 @@
       "expo-image",
       "expo-status-bar",
       "expo-web-browser",
-      "./withPaytmRepository.js"
+      "./withPaytmRepository.js",
+      "expo-audio",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -266,7 +266,7 @@ export default function CustomerProfileScreen() {
         </View>
 
         {/* ── Settings & Developer Config ── */}
-        <Text style={{ fontSize: 11, fontWeight: '900', color: '#64748B', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8, paddingLeft: 4 }}>
+        {/* <Text style={{ fontSize: 11, fontWeight: '900', color: '#64748B', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8, paddingLeft: 4 }}>
           Preferences & Backend
         </Text>
 
@@ -295,9 +295,9 @@ export default function CustomerProfileScreen() {
             </View>
           </View>
           <Ionicons name={showServerConfig ? "chevron-up" : "chevron-down"} size={18} color="#64748B" />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
-        {showServerConfig && (
+        {/* {showServerConfig && (
           <View style={{
             backgroundColor: '#FFFFFF',
             borderRadius: 20,
@@ -348,7 +348,7 @@ export default function CustomerProfileScreen() {
               )}
             </TouchableOpacity>
           </View>
-        )}
+        )} */}
 
         {/* ── Logout Button ── */}
         <TouchableOpacity
