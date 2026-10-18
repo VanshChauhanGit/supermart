@@ -124,6 +124,26 @@ export async function registerDeliveryBoyPushNotificationsAsync(apiBaseUrl, deli
 }
 
 /**
+ * Unregister this device's push token from backend on logout or role change
+ */
+export async function unregisterPushTokenAsync(apiBaseUrl) {
+  try {
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: '0a2df424-a2d1-4086-8604-972666d394df'
+    });
+    const pushToken = tokenData?.data;
+    if (pushToken && apiBaseUrl) {
+      await fetch(`${apiBaseUrl}/auth/push-token/unregister`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pushToken })
+      });
+      console.log('[Notifications] Push token successfully unregistered from backend');
+    }
+  } catch (_e) {}
+}
+
+/**
  * Trigger an immediate high-priority local notification banner with sound for Store Owner
  */
 export async function triggerForegroundOrderNotification(order) {

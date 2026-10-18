@@ -10,6 +10,7 @@ import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { io } from "socket.io-client";
 import { API_BASE_URL } from "../config/api";
+import { unregisterPushTokenAsync } from "../services/notifications";
 
 const AppContext = createContext();
 
@@ -149,6 +150,17 @@ export function AppProvider({ children }) {
   }, [cart, isAuthLoaded]);
 
   const loginAdmin = useCallback(async (user) => {
+    // 1. Ensure exclusive role session: clear delivery and customer sessions
+    setDeliveryUser(null);
+    setDeliveryToken(null);
+    setCustomerUser(null);
+    setCustomerToken(null);
+    await storage.removeItem("supermart_mobile_delivery");
+    await storage.removeItem("supermart_mobile_delivery_token");
+    await storage.removeItem("supermart_mobile_customer");
+    await storage.removeItem("supermart_mobile_customer_token");
+
+    // 2. Set Admin session
     setAdminUser(user);
     await storage.setItem("supermart_mobile_admin", JSON.stringify(user));
   }, []);
@@ -156,32 +168,55 @@ export function AppProvider({ children }) {
   const logoutAdmin = useCallback(async () => {
     setAdminUser(null);
     await storage.removeItem("supermart_mobile_admin");
-  }, []);
+    unregisterPushTokenAsync(apiBaseUrl).catch(() => {});
+  }, [apiBaseUrl]);
 
   /**
    * loginCustomer — stores both the user object and JWT token.
    * Call as: loginCustomer(userData, token)
    */
   const loginCustomer = useCallback(async (user, token) => {
+    // 1. Ensure exclusive role session: clear admin and delivery sessions
+    setAdminUser(null);
+    setDeliveryUser(null);
+    setDeliveryToken(null);
+    await storage.removeItem("supermart_mobile_admin");
+    await storage.removeItem("supermart_mobile_delivery");
+    await storage.removeItem("supermart_mobile_delivery_token");
+
+    // 2. Unregister device push token from admin/delivery alerts
+    unregisterPushTokenAsync(apiBaseUrl).catch(() => {});
+
+    // 3. Set Customer session
     setCustomerUser(user);
     setCustomerToken(token || null);
     await storage.setItem("supermart_mobile_customer", JSON.stringify(user));
     if (token) {
       await storage.setItem("supermart_mobile_customer_token", token);
     }
-  }, []);
+  }, [apiBaseUrl]);
 
   const logoutCustomer = useCallback(async () => {
     setCustomerUser(null);
     setCustomerToken(null);
     await storage.removeItem("supermart_mobile_customer");
     await storage.removeItem("supermart_mobile_customer_token");
-  }, []);
+    unregisterPushTokenAsync(apiBaseUrl).catch(() => {});
+  }, [apiBaseUrl]);
 
   /**
    * loginDelivery — stores delivery boy session & token
    */
   const loginDelivery = useCallback(async (user, token) => {
+    // 1. Ensure exclusive role session: clear admin and customer sessions
+    setAdminUser(null);
+    setCustomerUser(null);
+    setCustomerToken(null);
+    await storage.removeItem("supermart_mobile_admin");
+    await storage.removeItem("supermart_mobile_customer");
+    await storage.removeItem("supermart_mobile_customer_token");
+
+    // 2. Set Delivery session
     setDeliveryUser(user);
     setDeliveryToken(token || null);
     await storage.setItem("supermart_mobile_delivery", JSON.stringify(user));
@@ -195,7 +230,8 @@ export function AppProvider({ children }) {
     setDeliveryToken(null);
     await storage.removeItem("supermart_mobile_delivery");
     await storage.removeItem("supermart_mobile_delivery_token");
-  }, []);
+    unregisterPushTokenAsync(apiBaseUrl).catch(() => {});
+  }, [apiBaseUrl]);
 
   const addToCart = useCallback((product) => {
     setCart((prev) => {

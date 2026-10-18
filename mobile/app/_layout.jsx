@@ -9,7 +9,11 @@ export default function RootLayout() {
     // Listen for notification taps by user (works from background, closed, or lockscreen)
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response?.notification?.request?.content?.data;
-      if (data?.type === 'NEW_ORDER' || data?.orderNo) {
+      if (data?.type === 'DELIVERY_ASSIGNED') {
+        try {
+          router.push('/delivery');
+        } catch (_e) {}
+      } else if (data?.type === 'NEW_ORDER' || data?.orderNo) {
         try {
           router.push('/admin/orders');
         } catch (_e) {}

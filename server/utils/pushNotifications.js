@@ -73,11 +73,38 @@ const persistDeliveryTokens = () => {
 };
 
 /**
+ * Remove a token from all delivery boy registries
+ */
+function removeDeliveryBoyTokenGlobally(token) {
+  if (!token || typeof token !== 'string') return;
+  const cleanToken = token.trim();
+  let changed = false;
+  for (const [key, set] of deliveryBoyTokens.entries()) {
+    if (set.has(cleanToken)) {
+      set.delete(cleanToken);
+      changed = true;
+      if (set.size === 0) {
+        deliveryBoyTokens.delete(key);
+      }
+    }
+  }
+  if (changed) {
+    persistDeliveryTokens();
+    console.log(`[Push Service] Removed token from delivery boy registries: ${cleanToken}`);
+  }
+}
+
+/**
  * Register a new Admin/Store Owner Expo Push Token
+ * Automatically strips the token from Delivery Boy registries so Admins NEVER receive rider alerts!
  */
 function registerAdminPushToken(token) {
   if (!token || typeof token !== 'string') return false;
   const cleanToken = token.trim();
+
+  // Role exclusivity: Remove token from delivery boy registry
+  removeDeliveryBoyTokenGlobally(cleanToken);
+
   adminPushTokens.add(cleanToken);
   persistAdminTokens();
   console.log(`[Push Service] Registered admin push token. Total active tokens: ${adminPushTokens.size}`);
@@ -88,19 +115,40 @@ function registerAdminPushToken(token) {
  * Remove an invalid or expired admin push token
  */
 function removeAdminPushToken(token) {
-  if (adminPushTokens.has(token)) {
-    adminPushTokens.delete(token);
+  if (!token) return;
+  const cleanToken = typeof token === 'string' ? token.trim() : token;
+  if (adminPushTokens.has(cleanToken)) {
+    adminPushTokens.delete(cleanToken);
     persistAdminTokens();
+    console.log(`[Push Service] Removed token from admin registry: ${cleanToken}`);
   }
+}
+
+/**
+ * Completely unregister a push token from all roles (used on Logout or Customer switch)
+ */
+function unregisterPushToken(token) {
+  if (!token || typeof token !== 'string') return;
+  const cleanToken = token.trim();
+  removeAdminPushToken(cleanToken);
+  removeDeliveryBoyTokenGlobally(cleanToken);
+  console.log(`[Push Service] Completely unregistered push token from all roles: ${cleanToken}`);
 }
 
 /**
  * Register a Delivery Boy Expo Push Token
  * Links the token to rider ID and mobile number so assignments reliably find it.
+ * Automatically strips the token from Admin registry so Riders NEVER receive admin alerts!
  */
 function registerDeliveryBoyPushToken({ deliveryBoyId, mobile, pushToken }) {
   if (!pushToken || typeof pushToken !== 'string') return false;
   const cleanToken = pushToken.trim();
+
+  // Role exclusivity: Remove token from admin registry
+  removeAdminPushToken(cleanToken);
+
+  // Clear this token from any previously assigned rider IDs
+  removeDeliveryBoyTokenGlobally(cleanToken);
 
   let registered = false;
 
@@ -266,6 +314,8 @@ module.exports = {
   registerAdminPushToken,
   removeAdminPushToken,
   registerDeliveryBoyPushToken,
+  removeDeliveryBoyTokenGlobally,
+  unregisterPushToken,
   getDeliveryBoyTokens,
   sendOrderPushNotification,
   sendDeliveryBoyPushNotification,

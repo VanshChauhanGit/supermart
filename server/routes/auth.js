@@ -842,7 +842,8 @@ const {
   registerAdminPushToken,
   getAdminPushTokens,
   registerDeliveryBoyPushToken,
-  getDeliveryBoyTokens
+  getDeliveryBoyTokens,
+  unregisterPushToken
 } = require('../utils/pushNotifications');
 
 router.post('/admin/push-token', (req, res) => {
@@ -890,6 +891,23 @@ router.post('/delivery-boy/push-token', async (req, res) => {
       message: 'Delivery partner push token registered successfully.',
       tokensCount: getDeliveryBoyTokens(deliveryBoyId, mobile).length
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * @route   POST /api/v1/auth/push-token/unregister
+ * @desc    Unregister a device push token on logout or role change
+ * @access  Public
+ */
+router.post('/push-token/unregister', (req, res) => {
+  try {
+    const { pushToken } = req.body;
+    if (pushToken) {
+      unregisterPushToken(pushToken);
+    }
+    res.json({ success: true, message: 'Push token unregistered from all roles successfully.' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
