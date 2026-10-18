@@ -52,7 +52,17 @@
       "expo-web-browser",
       "./withPaytmRepository.js",
       "expo-audio",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "-dontwarn com.facebook.react.** -dontwarn com.google.android.gms.**"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
