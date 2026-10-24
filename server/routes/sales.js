@@ -14,23 +14,78 @@ const generateInvoiceNo = () => {
   return `SUP-${dateStr}-${rand}`;
 };
 
-// GET Sales list & Analytics
+const OnlineOrder = require('../models/OnlineOrder');
+
+// Helper to determine delivery date for an online order
+const getDeliveredDate = (order) => {
+  return order.statusTimestamps?.deliveredAt 
+    || order.updatedAt 
+    || order.createdAt 
+    || new Date();
+};
+
+// GET Sales list & Analytics (combines POS sales and delivered online orders)
 router.get('/', async (req, res) => {
   try {
     const { startDate, endDate, limit = 50 } = req.query;
-    let sales;
+    let sales = [];
+    let deliveredOrders = [];
+
     try {
       sales = await Sale.find().sort({ createdAt: -1 }).limit(Number(limit));
     } catch (e) {
       sales = memorySales.slice(0, Number(limit));
     }
-    res.json({ success: true, count: sales.length, data: sales });
+
+    try {
+      deliveredOrders = await OnlineOrder.find({ status: 'DELIVERED' })
+        .sort({ 'statusTimestamps.deliveredAt': -1, updatedAt: -1 })
+        .limit(Number(limit));
+    } catch (e) {
+      const orderRoutes = require('./orders');
+      const memOrders = orderRoutes.memoryOrders || [];
+      deliveredOrders = memOrders.filter(o => o.status === 'DELIVERED');
+    }
+
+    // Format delivered online orders as sale records
+    const formattedOrders = deliveredOrders.map(o => ({
+      _id: o._id,
+      invoiceNo: o.orderNo || `ORD-${o._id}`,
+      customerId: null,
+      customerName: o.customerName || 'Online Customer',
+      customerPhone: o.phone || '',
+      items: (o.items || []).map(i => ({
+        productId: i.productId,
+        name: i.name,
+        price: i.price,
+        quantity: i.quantity,
+        unit: i.unit || 'pcs',
+        total: i.total || (i.price * i.quantity)
+      })),
+      subtotal: o.subtotal || o.totalAmount,
+      discount: o.discountAmount || 0,
+      tax: 0,
+      totalAmount: o.totalAmount || 0,
+      paymentMode: o.paymentMethod === 'ONLINE_UPI' ? 'UPI' : 'CASH',
+      paymentStatus: 'PAID',
+      notes: `Online Order Delivered (${o.paymentMethod || 'COD'})`,
+      isOnlineOrder: true,
+      createdAt: getDeliveredDate(o)
+    }));
+
+    // Merge and sort newest first
+    const combined = [...sales, ...formattedOrders].sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    ).slice(0, Number(limit));
+
+    res.json({ success: true, count: combined.length, data: combined });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // GET Sales Summary Stats (Today, Week, Month Revenue, Total Debt, Payment Breakdown)
+// Incorporates both in-store POS sales AND delivered Online Orders
 router.get('/summary', async (req, res) => {
   try {
     const startOfDay = new Date();
@@ -57,14 +112,59 @@ router.get('/summary', async (req, res) => {
       monthSales = memorySales.filter(s => new Date(s.createdAt) >= startOfMonth);
     }
 
-    const todayRevenue = todaySales.reduce((acc, s) => acc + (s.totalAmount || 0), 0);
-    const todayOrders = todaySales.length;
-    const weekRevenue = weekSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0);
-    const monthRevenue = monthSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0);
+    // Query delivered online orders
+    let allDeliveredOrders = [];
+    try {
+      allDeliveredOrders = await OnlineOrder.find({ status: 'DELIVERED' });
+    } catch (e) {
+      const orderRoutes = require('./orders');
+      const memOrders = orderRoutes.memoryOrders || [];
+      allDeliveredOrders = memOrders.filter(o => o.status === 'DELIVERED');
+    }
+
+    const todayDeliveredOrders = allDeliveredOrders.filter(o => {
+      const d = new Date(getDeliveredDate(o));
+      return d >= startOfDay;
+    });
+
+    const weekDeliveredOrders = allDeliveredOrders.filter(o => {
+      const d = new Date(getDeliveredDate(o));
+      return d >= startOfWeek;
+    });
+
+    const monthDeliveredOrders = allDeliveredOrders.filter(o => {
+      const d = new Date(getDeliveredDate(o));
+      return d >= startOfMonth;
+    });
+
+    // POS Revenue totals
+    const posTodayRevenue = todaySales.reduce((acc, s) => acc + (s.totalAmount || 0), 0);
+    const posWeekRevenue = weekSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0);
+    const posMonthRevenue = monthSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0);
+
+    // Online Delivered Revenue totals
+    const onlineTodayRevenue = todayDeliveredOrders.reduce((acc, o) => acc + (o.totalAmount || 0), 0);
+    const onlineWeekRevenue = weekDeliveredOrders.reduce((acc, o) => acc + (o.totalAmount || 0), 0);
+    const onlineMonthRevenue = monthDeliveredOrders.reduce((acc, o) => acc + (o.totalAmount || 0), 0);
+
+    // Combined Revenue and Order Counts
+    const todayRevenue = posTodayRevenue + onlineTodayRevenue;
+    const weekRevenue = posWeekRevenue + onlineWeekRevenue;
+    const monthRevenue = posMonthRevenue + onlineMonthRevenue;
+    const todayOrders = todaySales.length + todayDeliveredOrders.length;
+
+    // Payment breakdowns (COD counts towards CASH, ONLINE_UPI towards UPI)
+    const onlineCashToday = todayDeliveredOrders
+      .filter(o => o.paymentMethod === 'COD' || !o.paymentMethod)
+      .reduce((acc, o) => acc + (o.totalAmount || 0), 0);
+
+    const onlineUpiToday = todayDeliveredOrders
+      .filter(o => o.paymentMethod === 'ONLINE_UPI')
+      .reduce((acc, o) => acc + (o.totalAmount || 0), 0);
 
     const paymentBreakdown = {
-      CASH: todaySales.filter(s => s.paymentMode === 'CASH').reduce((acc, s) => acc + (s.totalAmount || 0), 0),
-      UPI: todaySales.filter(s => s.paymentMode === 'UPI').reduce((acc, s) => acc + (s.totalAmount || 0), 0),
+      CASH: todaySales.filter(s => s.paymentMode === 'CASH').reduce((acc, s) => acc + (s.totalAmount || 0), 0) + onlineCashToday,
+      UPI: todaySales.filter(s => s.paymentMode === 'UPI').reduce((acc, s) => acc + (s.totalAmount || 0), 0) + onlineUpiToday,
       UDHAR: todaySales.filter(s => s.paymentMode === 'UDHAR').reduce((acc, s) => acc + (s.totalAmount || 0), 0)
     };
 
@@ -83,7 +183,11 @@ router.get('/summary', async (req, res) => {
         weekRevenue,
         monthRevenue,
         paymentBreakdown,
-        totalUdharDebt
+        totalUdharDebt,
+        onlineTodayRevenue,
+        posTodayRevenue,
+        onlineDeliveredCount: todayDeliveredOrders.length,
+        posSalesCount: todaySales.length
       }
     });
   } catch (err) {

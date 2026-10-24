@@ -1,7 +1,59 @@
 const express = require('express');
 const router = express.Router();
 const OnlineOrder = require('../models/OnlineOrder');
+const Product = require('../models/Product');
+const { reduceProductStock, restoreProductStock } = require('./products');
 const { sendOrderPushNotification, sendDeliveryBoyPushNotification } = require('../utils/pushNotifications');
+
+// ── Helper: Reduce stock for each item in the order ──
+const reduceStockForOrder = async (order) => {
+  if (!order || !order.items || order.items.length === 0) return;
+  for (const item of order.items) {
+    const qty = item.quantity || 1;
+    try {
+      if (typeof reduceProductStock === 'function') {
+        await reduceProductStock(item.productId, item.variantId, qty);
+      } else if (item.variantId) {
+        await Product.findOneAndUpdate(
+          { _id: item.productId, 'variants._id': item.variantId },
+          { $inc: { 'variants.$.stockQty': -qty } }
+        );
+      } else {
+        await Product.findByIdAndUpdate(item.productId, {
+          $inc: { stockQty: -qty }
+        });
+      }
+    } catch (e) {
+      console.warn(`[Stock] Failed to reduce stock for product ${item.productId}:`, e.message);
+    }
+  }
+  console.log(`[Stock] Reduced stock for ${order.items.length} items in order ${order.orderNo}`);
+};
+
+// ── Helper: Restore stock for each item when order is cancelled ──
+const restoreStockForOrder = async (order) => {
+  if (!order || !order.items || order.items.length === 0) return;
+  for (const item of order.items) {
+    const qty = item.quantity || 1;
+    try {
+      if (typeof restoreProductStock === 'function') {
+        await restoreProductStock(item.productId, item.variantId, qty);
+      } else if (item.variantId) {
+        await Product.findOneAndUpdate(
+          { _id: item.productId, 'variants._id': item.variantId },
+          { $inc: { 'variants.$.stockQty': qty } }
+        );
+      } else {
+        await Product.findByIdAndUpdate(item.productId, {
+          $inc: { stockQty: qty }
+        });
+      }
+    } catch (e) {
+      console.warn(`[Stock] Failed to restore stock for product ${item.productId}:`, e.message);
+    }
+  }
+  console.log(`[Stock] Restored stock for ${order.items.length} items in cancelled order ${order.orderNo}`);
+};
 
 let memoryOrders = [
   {
@@ -20,6 +72,7 @@ let memoryOrders = [
     totalAmount: 397,
     paymentMethod: 'COD',
     status: 'PENDING',
+    stockDeducted: true,
     assignedDeliveryRider: 'Unassigned',
     createdAt: new Date()
   }
@@ -86,6 +139,7 @@ router.post('/', async (req, res) => {
         totalAmount: Number(totalAmount),
         paymentMethod: paymentMethod || 'COD',
         status: 'PENDING',
+        stockDeducted: true,
         deliveryOtp,
         estimatedDeliveryMinutes: Number(estimatedDeliveryMinutes) || 15,
         location: cleanLocation,
@@ -113,6 +167,7 @@ router.post('/', async (req, res) => {
         totalAmount: Number(totalAmount),
         paymentMethod: paymentMethod || 'COD',
         status: 'PENDING',
+        stockDeducted: true,
         assignedDeliveryRider: 'Unassigned',
         deliveryOtp,
         estimatedDeliveryMinutes: Number(estimatedDeliveryMinutes) || 15,
@@ -127,9 +182,16 @@ router.post('/', async (req, res) => {
       };
       memoryOrders.unshift(newOrder);
     }
+
+    // Automatically reduce stock when order is placed
+    reduceStockForOrder(newOrder).catch(err => 
+      console.warn('[Orders] Stock reduction error on order creation:', err.message)
+    );
+
     const io = req.app.get('io');
     if (io) {
       io.emit('newOrder', newOrder);
+      io.emit('stockUpdated', { orderNo: newOrder.orderNo });
     }
 
     // Send push notification to Store Owner devices (works even if app is closed!)
@@ -193,6 +255,17 @@ router.put('/:id/status', async (req, res) => {
     const id = req.params.id;
     const { status, riderName, riderPhone, deliveryBoyId, notes } = req.body;
 
+    let existingOrder;
+    try {
+      existingOrder = await OnlineOrder.findById(id);
+    } catch (e) {
+      existingOrder = memoryOrders.find(o => o._id === id);
+    }
+
+    if (!existingOrder) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
     // ── Business Rule: A delivery boy cannot be assigned if already out on an active delivery ──
     if (status === 'OUT_FOR_DELIVERY' && (deliveryBoyId || riderPhone)) {
       const cleanRiderPhone = riderPhone ? riderPhone.replace(/\D/g, '') : null;
@@ -225,6 +298,14 @@ router.put('/:id/status', async (req, res) => {
       }
     }
 
+    // ── Stock Lifecycle Handling ──
+    // 1. Order is being cancelled -> restore stock if it was previously deducted
+    const shouldRestoreStock = (status === 'CANCELLED' && existingOrder.status !== 'CANCELLED' && existingOrder.stockDeducted !== false);
+    // 2. Order was cancelled and is reinstated -> re-deduct stock
+    const shouldReDeductStock = (existingOrder.status === 'CANCELLED' && status && status !== 'CANCELLED' && !existingOrder.stockDeducted);
+    // 3. Order is marked DELIVERED but was never deducted (e.g. legacy order) -> deduct
+    const shouldDeductOnDelivered = (status === 'DELIVERED' && !existingOrder.stockDeducted && !shouldReDeductStock);
+
     let updated;
     try {
       let updateFields = { status };
@@ -232,6 +313,12 @@ router.put('/:id/status', async (req, res) => {
       if (riderName) updateFields.assignedDeliveryRider = riderName;
       if (riderPhone) updateFields.riderPhone = riderPhone;
       if (deliveryBoyId) updateFields.deliveryBoyId = deliveryBoyId;
+
+      if (shouldRestoreStock) {
+        updateFields.stockDeducted = false;
+      } else if (shouldReDeductStock || shouldDeductOnDelivered) {
+        updateFields.stockDeducted = true;
+      }
 
       if (status === 'ACCEPTED') {
         updateFields['statusTimestamps.acceptedAt'] = new Date();
@@ -250,6 +337,11 @@ router.put('/:id/status', async (req, res) => {
         if (riderName) memoryOrders[idx].assignedDeliveryRider = riderName;
         if (riderPhone) memoryOrders[idx].riderPhone = riderPhone;
         if (deliveryBoyId) memoryOrders[idx].deliveryBoyId = deliveryBoyId;
+        if (shouldRestoreStock) {
+          memoryOrders[idx].stockDeducted = false;
+        } else if (shouldReDeductStock || shouldDeductOnDelivered) {
+          memoryOrders[idx].stockDeducted = true;
+        }
         if (!memoryOrders[idx].statusTimestamps) {
           memoryOrders[idx].statusTimestamps = { placedAt: memoryOrders[idx].createdAt };
         }
@@ -262,6 +354,13 @@ router.put('/:id/status', async (req, res) => {
     const io = req.app.get('io');
     if (io) {
       io.emit('orderStatusUpdate', updated);
+      if (status === 'DELIVERED') {
+        io.emit('revenueUpdated', { order: updated, totalAmount: updated?.totalAmount });
+        io.emit('salesSummaryUpdated', { order: updated });
+      }
+      if (shouldRestoreStock || shouldReDeductStock || shouldDeductOnDelivered) {
+        io.emit('stockUpdated', { orderId: id, status });
+      }
       if (status === 'OUT_FOR_DELIVERY' || deliveryBoyId || riderPhone) {
         io.emit('deliveryAssigned', {
           order: updated,
@@ -282,6 +381,17 @@ router.put('/:id/status', async (req, res) => {
     }
 
     res.json({ success: true, message: `Order status updated to ${status}`, data: updated });
+
+    // Handle stock changes asynchronously
+    if (shouldRestoreStock) {
+      restoreStockForOrder(existingOrder).catch(err => 
+        console.warn('[Orders] Stock restoration error on cancel:', err.message)
+      );
+    } else if (shouldReDeductStock || shouldDeductOnDelivered) {
+      reduceStockForOrder(updated || existingOrder).catch(err => 
+        console.warn('[Orders] Stock reduction error:', err.message)
+      );
+    }
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
@@ -315,6 +425,8 @@ router.post('/:id/verify-delivery', async (req, res) => {
       });
     }
 
+    const needsStockDeduction = !order.stockDeducted;
+
     // Mark as delivered
     let updated;
     try {
@@ -324,6 +436,7 @@ router.post('/:id/verify-delivery', async (req, res) => {
       };
       if (riderName) updateFields.assignedDeliveryRider = riderName;
       if (riderPhone) updateFields.riderPhone = riderPhone;
+      if (needsStockDeduction) updateFields.stockDeducted = true;
 
       updated = await OnlineOrder.findByIdAndUpdate(id, updateFields, { new: true });
     } catch (e) {
@@ -332,12 +445,18 @@ router.post('/:id/verify-delivery', async (req, res) => {
       order.statusTimestamps.deliveredAt = new Date();
       if (riderName) order.assignedDeliveryRider = riderName;
       if (riderPhone) order.riderPhone = riderPhone;
+      if (needsStockDeduction) order.stockDeducted = true;
       updated = order;
     }
 
     const io = req.app.get('io');
     if (io) {
       io.emit('orderStatusUpdate', updated);
+      io.emit('revenueUpdated', { order: updated, totalAmount: updated?.totalAmount });
+      io.emit('salesSummaryUpdated', { order: updated });
+      if (needsStockDeduction) {
+        io.emit('stockUpdated', { orderId: id });
+      }
     }
 
     res.json({
@@ -345,9 +464,18 @@ router.post('/:id/verify-delivery', async (req, res) => {
       message: 'OTP verified! Order successfully marked as Delivered.',
       data: updated
     });
+
+    // Reduce stock only if it was not already deducted
+    if (needsStockDeduction && updated) {
+      reduceStockForOrder(updated).catch(err => 
+        console.warn('[Orders] Stock reduction error on OTP verify:', err.message)
+      );
+    }
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+router.memoryOrders = memoryOrders;
 
 module.exports = router;

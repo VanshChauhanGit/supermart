@@ -1,5 +1,13 @@
 const mongoose = require('mongoose');
 
+const productVariantSchema = new mongoose.Schema({
+  label: { type: String, required: true },       // e.g. "1 kg", "500 g", "2 x 1 ltr"
+  mrp: { type: Number, required: true, min: 0 },
+  sellingPrice: { type: Number, required: true, min: 0 },
+  stockQty: { type: Number, required: true, default: 0 },
+  unitPrice: { type: String, default: '' },       // e.g. "₹19.7/100 ml"
+}, { _id: true });
+
 const productSchema = new mongoose.Schema({
   barcode: { type: String, required: true, unique: true, index: true },
   name: { type: String, required: true, index: true },
@@ -16,6 +24,9 @@ const productSchema = new mongoose.Schema({
   stockQty: { type: Number, required: true, default: 0 },
   reorderLevel: { type: Number, default: 5 },
   imageUrl: { type: String, default: '' },
+  images: [{ type: String }],                     // Multiple product images
+  description: { type: String, default: '' },     // Product description
+  variants: [productVariantSchema],               // Size/quantity options
   isAvailableForOnline: { type: Boolean, default: true },
 }, { timestamps: true });
 

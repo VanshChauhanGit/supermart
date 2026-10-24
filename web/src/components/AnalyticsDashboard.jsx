@@ -1,42 +1,101 @@
 import React, { useState, useEffect } from 'react';
 import { 
   BarChart3, TrendingUp, DollarSign, Users, ShoppingBag, 
-  ArrowUpRight, ArrowDownRight, Calendar, Layers 
+  ArrowUpRight, ArrowDownRight, Calendar, Layers, RefreshCw 
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer 
 } from 'recharts';
+import { io } from 'socket.io-client';
 
-export default function AnalyticsDashboard({ customers }) {
+export default function AnalyticsDashboard({ customers = [] }) {
   const [salesData, setSalesData] = useState([]);
-  const [summary, setSummary] = useState({ todayRevenue: 0, todayOrders: 0, totalUdharDebt: 0 });
+  const [summary, setSummary] = useState({ 
+    todayRevenue: 0, 
+    todayOrders: 0, 
+    totalUdharDebt: 0,
+    weekRevenue: 0,
+    monthRevenue: 0,
+    onlineTodayRevenue: 0,
+    posTodayRevenue: 0,
+    onlineDeliveredCount: 0,
+    posSalesCount: 0
+  });
+  const [loading, setLoading] = useState(false);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [res, sumRes] = await Promise.all([
+        fetch('/api/v1/sales'),
+        fetch('/api/v1/sales/summary')
+      ]);
+      const data = await res.json();
+      if (data.success) setSalesData(data.data);
+
+      const sumData = await sumRes.json();
+      if (sumData.success) setSummary(sumData.data);
+    } catch (e) {
+      console.error('Error fetching analytics data:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch('/api/v1/sales');
-        const data = await res.json();
-        if (data.success) setSalesData(data.data);
-
-        const sumRes = await fetch('/api/v1/sales/summary');
-        const sumData = await sumRes.json();
-        if (sumData.success) setSummary(sumData.data);
-      } catch (e) {}
-    };
     fetchData();
+
+    const SOCKET_URL = window.location.origin;
+    const socket = io(SOCKET_URL, { path: '/socket.io' });
+
+    const handleUpdate = () => {
+      fetchData();
+    };
+
+    socket.on('revenueUpdated', handleUpdate);
+    socket.on('salesSummaryUpdated', handleUpdate);
+    socket.on('orderStatusUpdate', handleUpdate);
+
+    return () => {
+      socket.off('revenueUpdated', handleUpdate);
+      socket.off('salesSummaryUpdated', handleUpdate);
+      socket.off('orderStatusUpdate', handleUpdate);
+      socket.disconnect();
+    };
   }, []);
 
-  const totalUdharDebt = customers.reduce((acc, c) => acc + (c.creditBalance || 0), 0);
+  const totalUdharDebt = (customers || []).reduce((acc, c) => acc + (c.creditBalance || 0), 0);
 
-  const salesByDay = [
-    { day: 'Mon', revenue: 4200 },
-    { day: 'Tue', revenue: 6100 },
-    { day: 'Wed', revenue: 5400 },
-    { day: 'Thu', revenue: 7800 },
-    { day: 'Fri', revenue: 8900 },
-    { day: 'Sat', revenue: 12400 },
-    { day: 'Sun', revenue: 15200 }
-  ];
+  // Compute 7-day revenue trend dynamically from combined sales records
+  const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const last7DaysMap = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    const dayLabel = daysOfWeek[d.getDay()];
+    last7DaysMap.push({
+      dateStr: d.toISOString().slice(0, 10),
+      day: i === 0 ? 'Today' : dayLabel,
+      revenue: 0
+    });
+  }
+
+  salesData.forEach(sale => {
+    const saleDateStr = new Date(sale.createdAt).toISOString().slice(0, 10);
+    const dayEntry = last7DaysMap.find(d => d.dateStr === saleDateStr);
+    if (dayEntry) {
+      dayEntry.revenue += (sale.totalAmount || 0);
+    }
+  });
+
+  const salesByDay = last7DaysMap.map(({ day, revenue }) => ({ day, revenue }));
+
+  // Average bill calculation
+  const totalCompletedBills = salesData.length;
+  const avgBillSize = totalCompletedBills > 0 
+    ? Math.round(salesData.reduce((acc, s) => acc + (s.totalAmount || 0), 0) / totalCompletedBills) 
+    : 0;
 
   const categoryChartData = [
     { name: 'Grocery & Atta', value: 45, color: '#28469E' },
@@ -54,16 +113,17 @@ export default function AnalyticsDashboard({ customers }) {
         
         <div className="glass-panel p-5 bg-white border border-slate-200">
           <div className="flex justify-between items-center mb-2">
-            <span className="text-xs text-slate-500 font-semibold">Today's Sales Revenue</span>
+            <span className="text-xs text-slate-500 font-semibold">Today's Total Revenue</span>
             <div className="bg-emerald-50 p-2 rounded-xl text-emerald-600 border border-emerald-200">
               <TrendingUp size={20} />
             </div>
           </div>
           <div className="text-2xl font-black text-slate-900">
-            ₹{(summary.todayRevenue || 4850).toLocaleString('en-IN')}
+            ₹{(summary.todayRevenue || 0).toLocaleString('en-IN')}
           </div>
-          <div className="text-xs text-emerald-600 mt-1 font-bold">
-            <ArrowUpRight size={14} className="inline mr-0.5" /> +18.4% vs yesterday
+          <div className="text-xs text-slate-500 mt-1 font-medium flex items-center justify-between">
+            <span>POS: ₹{(summary.posTodayRevenue || 0).toLocaleString('en-IN')}</span>
+            <span className="text-blue-600 font-semibold">Online: ₹{(summary.onlineTodayRevenue || 0).toLocaleString('en-IN')}</span>
           </div>
         </div>
 
@@ -78,37 +138,37 @@ export default function AnalyticsDashboard({ customers }) {
             ₹{totalUdharDebt.toLocaleString('en-IN')}
           </div>
           <div className="text-xs text-slate-500 mt-1">
-            Active borrower accounts: {customers.filter(c => c.creditBalance > 0).length}
+            Active borrower accounts: {(customers || []).filter(c => (c.creditBalance || 0) > 0).length}
           </div>
         </div>
 
         <div className="glass-panel p-5 bg-white border border-slate-200">
           <div className="flex justify-between items-center mb-2">
-            <span className="text-xs text-slate-500 font-semibold">Completed Bills</span>
+            <span className="text-xs text-slate-500 font-semibold">Completed Orders & Bills</span>
             <div className="bg-blue-50 p-2 rounded-xl text-[#28469E] border border-blue-200">
               <ShoppingBag size={20} />
             </div>
           </div>
           <div className="text-2xl font-black text-slate-900">
-            {salesData.length || 24} Bills
+            {salesData.length} Orders
           </div>
           <div className="text-xs text-blue-600 font-semibold mt-1">
-            Average bill size: ₹520
+            Average order size: ₹{avgBillSize.toLocaleString('en-IN')}
           </div>
         </div>
 
         <div className="glass-panel p-5 bg-white border border-slate-200">
           <div className="flex justify-between items-center mb-2">
-            <span className="text-xs text-slate-500 font-semibold">Est. Profit Margin</span>
+            <span className="text-xs text-slate-500 font-semibold">7-Day Revenue</span>
             <div className="bg-purple-50 p-2 rounded-xl text-purple-600 border border-purple-200">
               <DollarSign size={20} />
             </div>
           </div>
           <div className="text-2xl font-black text-purple-700">
-            22.5%
+            ₹{(summary.weekRevenue || summary.todayRevenue || 0).toLocaleString('en-IN')}
           </div>
           <div className="text-xs text-emerald-600 font-bold mt-1">
-            Gross profit margin estimation
+            30-Day: ₹{(summary.monthRevenue || 0).toLocaleString('en-IN')}
           </div>
         </div>
       </div>
@@ -118,9 +178,19 @@ export default function AnalyticsDashboard({ customers }) {
         
         {/* Weekly Revenue Bar Chart */}
         <div className="glass-panel p-5 bg-white border border-slate-200">
-          <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <BarChart3 className="text-[#28469E]" /> Weekly Revenue Trend (₹)
-          </h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <BarChart3 className="text-[#28469E]" /> Weekly Revenue Trend (₹)
+            </h3>
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 transition"
+              title="Refresh"
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
           <div className="w-full h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={salesByDay}>
@@ -156,33 +226,53 @@ export default function AnalyticsDashboard({ customers }) {
 
       {/* Recent Sales Table */}
       <div className="glass-panel p-5 bg-white border border-slate-200">
-        <h3 className="text-sm font-bold text-slate-900 mb-4">Recent POS Bills & Receipts</h3>
+        <h3 className="text-sm font-bold text-slate-900 mb-4">Recent Sales & Delivered Orders</h3>
         <table className="w-full text-left text-sm border-collapse">
           <thead>
             <tr className="border-b border-slate-200 text-slate-500 text-xs font-semibold uppercase">
-              <th className="py-2.5 px-3">Invoice No</th>
+              <th className="py-2.5 px-3">Invoice / Order</th>
+              <th className="py-2.5 px-3">Type</th>
               <th className="py-2.5 px-3">Customer</th>
-              <th className="py-2.5 px-3">Payment Mode</th>
+              <th className="py-2.5 px-3">Payment</th>
               <th className="py-2.5 px-3 text-right">Total Amount</th>
               <th className="py-2.5 px-3 text-center">Time</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {salesData.map(s => (
-              <tr key={s._id} className="hover:bg-slate-50">
-                <td className="py-2.5 px-3 font-mono text-xs text-[#28469E] font-bold">#{s.invoiceNo}</td>
-                <td className="py-2.5 px-3 font-bold text-slate-900">{s.customerName}</td>
-                <td className="py-2.5 px-3">
-                  <span className={`badge ${s.paymentMode === 'UDHAR' ? 'badge-amber' : 'badge-emerald'}`}>
-                    {s.paymentMode}
-                  </span>
-                </td>
-                <td className="py-2.5 px-3 text-right font-black text-[#28469E]">₹{s.totalAmount}</td>
-                <td className="py-2.5 px-3 text-center text-xs text-slate-500">
-                  {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {salesData.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="py-8 text-center text-slate-400">
+                  No sales or delivered orders recorded yet
                 </td>
               </tr>
-            ))}
+            ) : (
+              salesData.map(s => (
+                <tr key={s._id} className="hover:bg-slate-50">
+                  <td className="py-2.5 px-3 font-mono text-xs text-[#28469E] font-bold">
+                    #{s.invoiceNo}
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      s.isOnlineOrder ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-slate-100 text-slate-700'
+                    }`}>
+                      {s.isOnlineOrder ? 'Online Delivery' : 'In-Store POS'}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 font-bold text-slate-900">{s.customerName}</td>
+                  <td className="py-2.5 px-3">
+                    <span className={`badge ${s.paymentMode === 'UDHAR' ? 'badge-amber' : 'badge-emerald'}`}>
+                      {s.paymentMode}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-black text-[#28469E]">
+                    ₹{(s.totalAmount || 0).toLocaleString('en-IN')}
+                  </td>
+                  <td className="py-2.5 px-3 text-center text-xs text-slate-500">
+                    {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

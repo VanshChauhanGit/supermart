@@ -266,7 +266,7 @@ export default function CustomerLoginScreen() {
         {/* Footer info */}
         <View className="items-center mt-4">
           <Text className="text-[11px] text-slate-400 font-semibold text-center">
-            Supermart Online Storefront • 30-Min Express Kiryana Delivery
+            Mandhaur Supermart Online Storefront • 30-Min Express Kiryana Delivery
           </Text>
         </View>
 

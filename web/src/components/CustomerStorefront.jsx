@@ -4,7 +4,7 @@ import {
   Phone, Sparkles, ArrowRight, ShieldCheck 
 } from 'lucide-react';
 
-export default function CustomerStorefront({ products, onOrderPlaced }) {
+export default function CustomerStorefront({ products = [], loading = false, onOrderPlaced }) {
   const [cart, setCart] = useState([]);
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -28,7 +28,7 @@ export default function CustomerStorefront({ products, onOrderPlaced }) {
     'Stationery'
   ];
 
-  const filtered = products.filter(p => {
+  const filtered = (products || []).filter(p => {
     if (categoryFilter !== 'ALL' && p.category !== categoryFilter) return false;
     if (searchTerm) {
       return p.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -156,45 +156,67 @@ export default function CustomerStorefront({ products, onOrderPlaced }) {
       </div>
 
       {/* Products Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-        {filtered.map(product => (
-          <div
-            key={product._id}
-            className="glass-panel p-4 bg-white border border-slate-200 rounded-2xl flex flex-col justify-between hover:shadow-lg transition-all duration-200"
-          >
-            <div>
-              <div className="h-36 rounded-xl overflow-hidden mb-3 bg-slate-100">
-                <img
-                  src={product.imageUrl || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80'}
-                  alt={product.name}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-
-              <span className="badge badge-blue text-[10px] mb-1">
-                {product.category}
-              </span>
-
-              <h4 className="font-bold text-slate-900 text-sm mt-1">{product.name}</h4>
-              <p className="text-xs text-slate-500">Pack size: {product.unit}</p>
-            </div>
-
-            <div className="mt-4 flex justify-between items-center pt-3 border-t border-slate-100">
-              <div>
-                <span className="text-lg font-black text-[#28469E]">₹{product.sellingPrice}</span>
-                <span className="text-xs text-slate-400 line-through ml-1.5">₹{product.mrp}</span>
-              </div>
-
-              <button
-                onClick={() => addToCart(product)}
-                className="btn btn-primary text-xs py-1.5 px-3"
-              >
-                <Plus size={16} /> Add
-              </button>
-            </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="glass-panel p-16 bg-white border border-slate-200 rounded-3xl flex flex-col items-center justify-center text-center shadow-xs">
+          <div className="w-16 h-16 rounded-full bg-amber-50 border-2 border-amber-200 flex items-center justify-center mb-3">
+            <ShoppingBag className="text-amber-600" size={28} />
           </div>
-        ))}
-      </div>
+          <h3 className="text-base font-bold text-slate-900">No items match your search</h3>
+          <p className="text-xs text-slate-500 mt-1 max-w-xs">
+            Try searching with different keywords or reset the category filter.
+          </p>
+          <button
+            onClick={() => { setSearchTerm(''); setCategoryFilter('ALL'); }}
+            className="mt-4 px-4 py-2 bg-slate-900 text-amber-400 text-xs font-black rounded-full"
+          >
+            Reset Filters
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+          {filtered.map(product => (
+            <div
+              key={product._id}
+              className="glass-panel p-4 bg-white border border-slate-200 rounded-2xl flex flex-col justify-between hover:shadow-lg transition-all duration-200"
+            >
+              <div>
+                <div className="h-36 rounded-xl overflow-hidden mb-3 bg-slate-100">
+                  <img
+                    src={product.imageUrl || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80'}
+                    alt={product.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+
+                <span className="badge badge-blue text-[10px] mb-1">
+                  {product.category}
+                </span>
+
+                <h4 className="font-bold text-slate-900 text-sm mt-1">{product.name}</h4>
+                <p className="text-xs text-slate-500">Pack size: {product.unit}</p>
+              </div>
+
+              <div className="mt-4 flex justify-between items-center pt-3 border-t border-slate-100">
+                <div>
+                  <span className="text-lg font-black text-[#28469E]">₹{product.sellingPrice}</span>
+                  <span className="text-xs text-slate-400 line-through ml-1.5">₹{product.mrp}</span>
+                </div>
+
+                <button
+                  onClick={() => addToCart(product)}
+                  className="btn btn-primary text-xs py-1.5 px-3"
+                >
+                  <Plus size={16} /> Add
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Checkout Modal */}
       {showCheckout && (

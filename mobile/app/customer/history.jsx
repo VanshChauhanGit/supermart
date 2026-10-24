@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, RefreshControl, StatusBar } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, StatusBar, ActivityIndicator } from 'react-native';
 import { useApp } from '../../context/AppContext';
 
 export default function CustomerHistoryScreen() {
   const { customerUser, apiBaseUrl } = useApp();
   const [orders, setOrders] = useState([]);
   const [customerAccount, setCustomerAccount] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchCustomerData = async () => {
@@ -31,10 +32,14 @@ export default function CustomerHistoryScreen() {
           if (dtData.success) setCustomerAccount(dtData.data);
         }
       }
-    } catch (e) {}
+    } catch (e) {
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
+    setLoading(true);
     fetchCustomerData();
   }, [customerUser]);
 
@@ -97,7 +102,11 @@ export default function CustomerHistoryScreen() {
           MY EXPRESS DELIVERY ORDERS ({orders.length})
         </Text>
 
-        {orders.length === 0 ? (
+        {loading ? (
+          <View className="py-8 items-center justify-center">
+            <ActivityIndicator size="small" color="#F7C400" />
+          </View>
+        ) : orders.length === 0 ? (
           <View className="bg-white rounded-2xl p-5 items-center mb-5 border border-slate-200">
             <Text className="text-xs text-slate-500 font-medium">No active online delivery orders found.</Text>
           </View>
@@ -198,7 +207,7 @@ export default function CustomerHistoryScreen() {
                   </View>
                 )}
 
-                <Text className="text-[11px] text-slate-400 font-medium mt-1">{tx.notes || 'Purchased at Supermart POS Counter'}</Text>
+                <Text className="text-[11px] text-slate-400 font-medium mt-1">{tx.notes || 'Purchased at Mandhaur Supermart POS Counter'}</Text>
               </View>
             );
           })

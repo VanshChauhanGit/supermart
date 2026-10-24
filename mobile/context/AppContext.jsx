@@ -235,23 +235,41 @@ export function AppProvider({ children }) {
 
   const addToCart = useCallback((product) => {
     setCart((prev) => {
-      const idx = prev.findIndex((item) => item._id === product._id);
+      const maxStock = (product.stockQty !== undefined && product.stockQty !== null) ? Number(product.stockQty) : Infinity;
+      if (maxStock <= 0) return prev; // Out of stock
+
+      const itemKey = product.variantId ? `${product._id}_${product.variantId}` : (product.cartItemId || product._id);
+      const idx = prev.findIndex((item) => {
+        const existingKey = item.cartItemId || (item.variantId ? `${item._id}_${item.variantId}` : item._id);
+        return existingKey === itemKey;
+      });
       if (idx > -1) {
+        if (prev[idx].quantity >= maxStock) {
+          return prev; // Max available stock reached
+        }
         const copy = [...prev];
-        copy[idx].quantity += 1;
+        copy[idx].quantity = Math.min(maxStock, copy[idx].quantity + 1);
         return copy;
       } else {
-        return [...prev, { ...product, quantity: 1 }];
+        return [...prev, { ...product, cartItemId: itemKey, quantity: 1 }];
       }
     });
   }, []);
 
-  const updateCartQty = useCallback((id, delta) => {
+  const updateCartQty = useCallback((id, delta, maxStock = null) => {
     setCart((prev) => {
       return prev
         .map((item) => {
-          if (item._id === id) {
-            const q = item.quantity + delta;
+          const itemKey = item.cartItemId || (item.variantId ? `${item._id}_${item.variantId}` : item._id);
+          if (itemKey === id || item._id === id) {
+            const limit = maxStock !== null
+              ? Number(maxStock)
+              : (item.stockQty !== undefined && item.stockQty !== null ? Number(item.stockQty) : Infinity);
+
+            if (delta > 0 && item.quantity >= limit) {
+              return item; // Cannot exceed available stock
+            }
+            const q = delta > 0 ? Math.min(limit, item.quantity + delta) : item.quantity + delta;
             if (q <= 0) return null;
             return { ...item, quantity: q };
           }

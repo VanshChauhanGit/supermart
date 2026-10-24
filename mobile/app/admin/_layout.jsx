@@ -189,16 +189,10 @@ export default function AdminTabsLayout() {
             )
           }}
         />
-        {/* Tab 5: Udhar */}
+        {/* Udhar - Hidden for now */}
         <Tabs.Screen
           name="udhar"
-          options={{
-            title: "Udhar Khata",
-            tabBarLabel: "Udhar",
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons name={focused ? "book" : "book-outline"} size={22} color={color} />
-            )
-          }}
+          options={{ href: null }}
         />
         {/* Tab 6: Profile */}
         <Tabs.Screen

@@ -310,7 +310,7 @@ export default function VoiceSearchModal({ visible, onClose, onSearch }) {
                       Voice Search
                     </Text>
                     <Text className="text-[11px] font-semibold text-slate-400">
-                      Supermart Express Voice
+                      Mandhaur Supermart Express Voice
                     </Text>
                   </View>
                 </View>

@@ -354,7 +354,7 @@ export default function DeliveryBoyScreen() {
                 </View> */}
               </View>
               <Text className="text-xs font-bold text-slate-500">
-                {riderName} • Supermart
+                {riderName} • Mandhaur Supermart
               </Text>
             </View>
           </View>
@@ -752,7 +752,7 @@ export default function DeliveryBoyScreen() {
                 <Text className="text-xs font-bold text-slate-700">Store Assigned</Text>
               </View>
               <Text className="text-xs font-black text-slate-900">
-                Supermart Main Store
+                Mandhaur Supermart Main Store
               </Text>
             </View>
 

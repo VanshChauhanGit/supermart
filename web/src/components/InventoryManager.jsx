@@ -78,8 +78,13 @@ export default function InventoryManager({ products, onRefreshProducts }) {
     sellingPrice: '',
     stockQty: '',
     reorderLevel: 5,
-    imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80'
+    imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80',
+    images: [],
+    variants: [],
+    description: ''
   });
+
+  const [newImageInput, setNewImageInput] = useState('');
 
   const categories = [
     'ALL',
@@ -122,6 +127,7 @@ export default function InventoryManager({ products, onRefreshProducts }) {
 
   const handleOpenAdd = () => {
     setEditingProdId(null);
+    setNewImageInput('');
     setFormData({
       barcode: '890' + Math.floor(1000000000 + Math.random() * 9000000000),
       name: '',
@@ -133,14 +139,23 @@ export default function InventoryManager({ products, onRefreshProducts }) {
       sellingPrice: '',
       stockQty: 20,
       reorderLevel: 5,
-      imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80'
+      imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80',
+      images: [],
+      variants: [],
+      description: ''
     });
     setShowAddModal(true);
   };
 
   const handleOpenEdit = (p) => {
     setEditingProdId(p._id);
-    setFormData({ ...p });
+    setNewImageInput('');
+    setFormData({
+      ...p,
+      images: Array.isArray(p.images) ? [...p.images] : [],
+      variants: Array.isArray(p.variants) ? p.variants.map(v => ({ ...v })) : [],
+      description: p.description || ''
+    });
     setShowAddModal(true);
   };
 
@@ -162,10 +177,30 @@ export default function InventoryManager({ products, onRefreshProducts }) {
       const url = editingProdId ? `/api/v1/products/${editingProdId}` : '/api/v1/products';
       const method = editingProdId ? 'PUT' : 'POST';
 
+      const payload = {
+        ...formData,
+        purchasePrice: Number(formData.purchasePrice) || 0,
+        mrp: Number(formData.mrp) || Number(formData.sellingPrice) || 0,
+        sellingPrice: Number(formData.sellingPrice) || 0,
+        stockQty: Number(formData.stockQty) || 0,
+        reorderLevel: Number(formData.reorderLevel) || 5,
+        images: Array.isArray(formData.images) ? formData.images.filter(Boolean) : [],
+        variants: (formData.variants || [])
+          .filter(v => v.label && v.label.trim())
+          .map(v => ({
+            label: v.label.trim(),
+            mrp: Number(v.mrp) || Number(v.sellingPrice) || 0,
+            sellingPrice: Number(v.sellingPrice) || 0,
+            stockQty: Number(v.stockQty) || 0,
+            unitPrice: v.unitPrice || ''
+          })),
+        description: formData.description || ''
+      };
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.success) {
@@ -544,6 +579,196 @@ export default function InventoryManager({ products, onRefreshProducts }) {
                   className="input-field"
                 />
               </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="text-xs font-semibold text-slate-700">Product Description:</label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="input-field mt-1"
+                rows={2}
+                placeholder="Product description and details..."
+              />
+            </div>
+
+            {/* Additional Images */}
+            <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+              <label className="text-xs font-bold text-slate-700 block mb-1">
+                Additional Product Images ({formData.images?.length || 0}):
+              </label>
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="url"
+                  value={newImageInput}
+                  onChange={(e) => setNewImageInput(e.target.value)}
+                  placeholder="Paste image URL..."
+                  className="input-field text-xs flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newImageInput.trim()) {
+                      setFormData(prev => ({
+                        ...prev,
+                        images: [...(prev.images || []), newImageInput.trim()]
+                      }));
+                      setNewImageInput('');
+                    }
+                  }}
+                  className="btn btn-secondary text-xs px-3"
+                >
+                  + Add Image
+                </button>
+              </div>
+
+              {formData.images && formData.images.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {formData.images.map((imgUrl, idx) => (
+                    <div key={idx} className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-200 group">
+                      <img src={imgUrl} alt={`extra-${idx}`} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            images: prev.images.filter((_, i) => i !== idx)
+                          }));
+                        }}
+                        className="absolute top-0.5 right-0.5 bg-rose-600 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Options / Variants */}
+            <div className="mb-5 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Product Options / Variants ({formData.variants?.length || 0}):
+                  </label>
+                  <p className="text-[10px] text-slate-400">e.g. 500g, 1kg, 2L with different prices and stock</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormData(prev => ({
+                      ...prev,
+                      variants: [
+                        ...(prev.variants || []),
+                        { label: '', mrp: '', sellingPrice: '', stockQty: 10, unitPrice: '' }
+                      ]
+                    }));
+                  }}
+                  className="btn btn-secondary text-xs px-2.5 py-1"
+                >
+                  + Add Option
+                </button>
+              </div>
+
+              {formData.variants && formData.variants.length > 0 ? (
+                <div className="space-y-2">
+                  {formData.variants.map((variant, vIdx) => (
+                    <div key={vIdx} className="p-2.5 bg-white border border-slate-200 rounded-lg text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-700">Option #{vIdx + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData(prev => ({
+                              ...prev,
+                              variants: prev.variants.filter((_, i) => i !== vIdx)
+                            }));
+                          }}
+                          className="text-rose-500 font-bold hover:underline"
+                        >
+                          Delete
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-slate-500 font-semibold">Option Label:</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 1 kg, 500 g"
+                            value={variant.label}
+                            onChange={(e) => {
+                              const updated = [...formData.variants];
+                              updated[vIdx].label = e.target.value;
+                              setFormData({ ...formData, variants: updated });
+                            }}
+                            className="input-field text-xs py-1"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500 font-semibold">Unit Price Hint:</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. ₹19.7/100 ml"
+                            value={variant.unitPrice || ''}
+                            onChange={(e) => {
+                              const updated = [...formData.variants];
+                              updated[vIdx].unitPrice = e.target.value;
+                              setFormData({ ...formData, variants: updated });
+                            }}
+                            className="input-field text-xs py-1"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[10px] text-slate-500 font-semibold">Selling Price (₹):</label>
+                          <input
+                            type="number"
+                            value={variant.sellingPrice}
+                            onChange={(e) => {
+                              const updated = [...formData.variants];
+                              updated[vIdx].sellingPrice = e.target.value;
+                              setFormData({ ...formData, variants: updated });
+                            }}
+                            className="input-field text-xs py-1"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500 font-semibold">MRP (₹):</label>
+                          <input
+                            type="number"
+                            value={variant.mrp}
+                            onChange={(e) => {
+                              const updated = [...formData.variants];
+                              updated[vIdx].mrp = e.target.value;
+                              setFormData({ ...formData, variants: updated });
+                            }}
+                            className="input-field text-xs py-1"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500 font-semibold">Stock Qty:</label>
+                          <input
+                            type="number"
+                            value={variant.stockQty}
+                            onChange={(e) => {
+                              const updated = [...formData.variants];
+                              updated[vIdx].stockQty = e.target.value;
+                              setFormData({ ...formData, variants: updated });
+                            }}
+                            className="input-field text-xs py-1"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-400 italic">No variants added. Base price & stock will be used.</p>
+              )}
             </div>
 
             <div className="flex gap-2">

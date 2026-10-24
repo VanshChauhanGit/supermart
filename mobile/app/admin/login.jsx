@@ -166,52 +166,12 @@ export default function AdminLoginScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Server Config Toggle */}
-          <TouchableOpacity 
-            onPress={() => setShowServerConfig(!showServerConfig)}
-            className="pt-2 items-center flex-row justify-center gap-1.5"
-          >
-            <Ionicons name="settings-outline" size={13} color="#28469E" />
-            <Text className="text-xs font-bold text-[#28469E]">
-              {showServerConfig ? 'Hide Server Settings' : 'API Server Connection Settings'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Server Connection Box */}
-          {showServerConfig && (
-            <View className="mt-3 p-4 bg-[#F8FAFC] rounded-2xl border border-slate-200">
-              <Text className="text-xs font-bold text-slate-700 mb-1">Backend REST API Endpoint:</Text>
-              <TextInput
-                className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 mb-2.5"
-                value={serverUrlInput}
-                onChangeText={setServerUrlInput}
-                autoCapitalize="none"
-                placeholder="http://localhost:5000/api/v1"
-                placeholderTextColor="#94a3b8"
-              />
-              <TouchableOpacity
-                onPress={handleTestServer}
-                disabled={testingServer}
-                className="bg-[#28469E] py-2.5 rounded-xl items-center flex-row justify-center gap-1.5"
-              >
-                {testingServer ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="radio-outline" size={14} color="#FFFFFF" />
-                    <Text className="text-white text-xs font-bold">Test Connection</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
-
         </View>
 
         {/* Footer info */}
         <View className="items-center mt-4">
           <Text className="text-[11px] text-slate-400 font-semibold text-center">
-            Supermart Store Owner Portal • Protected POS Session
+            Mandhaur Supermart Store Owner Portal • Protected POS Session
           </Text>
         </View>
 

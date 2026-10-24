@@ -3,7 +3,7 @@ import {
   View, Text, FlatList, Image, TextInput,
   TouchableOpacity, ScrollView, StatusBar,
   Dimensions, RefreshControl, Animated,
-  StyleSheet, Platform
+  StyleSheet, Platform, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -12,6 +12,7 @@ import * as Haptics from 'expo-haptics';
 import { BlurView } from 'expo-blur';
 import { useApp } from '../../context/AppContext';
 import VoiceSearchModal from '../../components/VoiceSearchModal';
+import ProductDetailModal from '../../components/ProductDetailModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BANNER_CARD_WIDTH = SCREEN_WIDTH - 32;
@@ -198,11 +199,13 @@ export default function CustomerHomeScreen() {
   const { cart, addToCart, updateCartQty, apiBaseUrl, customerUser } = useApp();
 
   const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTab, setSelectedTab] = useState('ALL');
   const [dbCategories, setDbCategories] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
+  const [selectedProductForDetail, setSelectedProductForDetail] = useState(null);
 
   // Safe Haptic feedback helper
   const triggerHaptic = () => {
@@ -213,6 +216,7 @@ export default function CustomerHomeScreen() {
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
     Promise.all([
       fetch(`${apiBaseUrl}/categories`).then(r => r.json()).catch(() => ({})),
       fetch(`${apiBaseUrl}/products`).then(r => r.json()).catch(() => ({}))
@@ -224,6 +228,8 @@ export default function CustomerHomeScreen() {
       if (prodRes?.success) {
         setProducts(prodRes.data);
       }
+    }).finally(() => {
+      if (active) setLoading(false);
     });
 
     return () => { active = false; };
@@ -256,6 +262,11 @@ export default function CustomerHomeScreen() {
     })
   ];
 
+  const INITIAL_PAGE_SIZE = 12;
+  const PAGE_INCREMENT = 12;
+  const [visibleCount, setVisibleCount] = useState(INITIAL_PAGE_SIZE);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   // Dynamic Product Filter
   const filtered = products.filter(p => {
     if (searchTerm.trim()) {
@@ -270,11 +281,34 @@ export default function CustomerHomeScreen() {
     return p.category === selectedTab;
   });
 
+  // Reset pagination when filter or search changes
+  useEffect(() => {
+    setVisibleCount(INITIAL_PAGE_SIZE);
+  }, [searchTerm, selectedTab]);
+
+  // Paginated visible products for progressive rendering while scrolling
+  const visibleProducts = filtered.slice(0, visibleCount);
+  const hasMoreProducts = visibleCount < filtered.length;
+
+  const handleLoadMore = () => {
+    if (loadingMore || !hasMoreProducts) return;
+    setLoadingMore(true);
+    // Smooth micro-delay to let UI thread render smoothly without freezing
+    setTimeout(() => {
+      setVisibleCount(prev => Math.min(prev + PAGE_INCREMENT, filtered.length));
+      setLoadingMore(false);
+    }, 150);
+  };
+
   const cartTotalCount = cart.reduce((acc, i) => acc + i.quantity, 0);
   const cartTotalPrice = cart.reduce((acc, i) => acc + (i.sellingPrice * i.quantity), 0);
 
-  const getItemQtyInCart = (id) => {
-    const found = cart.find(i => i._id === id);
+  const getItemQtyInCart = (id, variantId = null) => {
+    if (variantId) {
+      const found = cart.find(i => (i.cartItemId === `${id}_${variantId}`) || (i._id === id && i.variantId === variantId));
+      return found ? found.quantity : 0;
+    }
+    const found = cart.find(i => i.cartItemId === id || i._id === id);
     return found ? found.quantity : 0;
   };
 
@@ -623,21 +657,37 @@ export default function CustomerHomeScreen() {
                 ? Math.round(((item.mrp - item.sellingPrice) / item.mrp) * 100)
                 : 0;
 
+              const isItemOutOfStock = (item.stockQty !== undefined && item.stockQty !== null && item.stockQty <= 0) &&
+                (!item.variants || item.variants.length === 0 || item.variants.every(v => v.stockQty <= 0));
+
               return (
                 <View
                   key={`shelf_${item._id}`}
+                  style={{ opacity: isItemOutOfStock ? 0.6 : 1 }}
                   className="w-[125px] mr-3.5 justify-between"
                 >
-                  <View>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setSelectedProductForDetail(item)}
+                  >
                     <View className="w-full aspect-[4/5] bg-slate-100 rounded-2xl overflow-hidden mb-2 relative">
                       <Image
                         source={{ uri: item.imageUrl || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80' }}
                         className="w-full h-full"
                         resizeMode="cover"
                       />
-                      {discount > 0 && (
+                      {discount > 0 && !isItemOutOfStock && (
                         <View className="absolute top-1.5 left-1.5 bg-[#16A34A] px-1.5 py-0.5 rounded-md shadow-xs">
                           <Text className="text-white text-[9px] font-black">{discount}% OFF</Text>
+                        </View>
+                      )}
+
+                      {/* Out of Stock Overlay */}
+                      {isItemOutOfStock && (
+                        <View className="absolute inset-0 bg-slate-950/45 items-center justify-center p-1">
+                          <View className="bg-rose-600 px-1.5 py-0.5 rounded">
+                            <Text className="text-white text-[8px] font-black uppercase tracking-wider">Out of Stock</Text>
+                          </View>
                         </View>
                       )}
                     </View>
@@ -648,16 +698,21 @@ export default function CustomerHomeScreen() {
                     <Text className="text-[10px] font-semibold text-slate-400 mt-0.5">
                       {item.unit || '1 pc'}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
 
                   <View className="flex-row justify-between items-center mt-2">
                     <Text className="text-[13px] font-black text-slate-900">
                       ₹{item.sellingPrice}
                     </Text>
 
-                    {qty === 0 ? (
+                    {isItemOutOfStock ? (
+                      <View className="bg-slate-100 px-1.5 py-1 rounded-lg border border-slate-200">
+                        <Text className="text-slate-400 text-[9px] font-bold">Unavailable</Text>
+                      </View>
+                    ) : qty === 0 ? (
                       <TouchableOpacity
                         onPress={() => {
+                          if (item.stockQty <= 0) return;
                           triggerHaptic();
                           addToCart(item);
                         }}
@@ -671,7 +726,18 @@ export default function CustomerHomeScreen() {
                           <Text className="text-slate-900 font-black text-[11px] px-1">-</Text>
                         </TouchableOpacity>
                         <Text className="text-slate-900 font-black text-[11px] px-1">{qty}</Text>
-                        <TouchableOpacity onPress={() => { triggerHaptic(); updateCartQty(item._id, 1); }}>
+                        <TouchableOpacity
+                          disabled={item.stockQty !== undefined && item.stockQty !== null && qty >= item.stockQty}
+                          onPress={() => {
+                            if (item.stockQty !== undefined && item.stockQty !== null && qty >= item.stockQty) {
+                              triggerHaptic();
+                              return;
+                            }
+                            triggerHaptic();
+                            updateCartQty(item._id, 1, item.stockQty);
+                          }}
+                          style={{ opacity: (item.stockQty !== undefined && item.stockQty !== null && qty >= item.stockQty) ? 0.4 : 1 }}
+                        >
                           <Text className="text-slate-900 font-black text-[11px] px-1">+</Text>
                         </TouchableOpacity>
                       </View>
@@ -685,7 +751,7 @@ export default function CustomerHomeScreen() {
       )}
 
       {/* ── 5. Main Grid Section Header ─────────────────────────── */}
-      <View className="mx-4 mb-3.5 flex-row justify-between items-center">
+      {/* <View className="mx-4 mb-3.5 flex-row justify-between items-center">
         <View>
           <Text className="text-xl font-bold text-slate-900 tracking-tight">
             {searchTerm ? `Results for "${searchTerm}"` : selectedTab === 'ALL' ? 'Explore All Products' : selectedTab}
@@ -702,10 +768,10 @@ export default function CustomerHomeScreen() {
             {filtered.length} {filtered.length === 1 ? 'item' : 'items'}
           </Text>
         </View>
-      </View>
+      </View> */}
 
       {/* Filter Active Breadcrumb */}
-      {selectedTab !== 'ALL' && (
+      {/* {selectedTab !== 'ALL' && (
         <View className="mx-4 mb-3 flex-row items-center">
           <TouchableOpacity
             onPress={() => setSelectedTab('ALL')}
@@ -717,7 +783,7 @@ export default function CustomerHomeScreen() {
             <Ionicons name="close-circle" size={14} color="#64748B" />
           </TouchableOpacity>
         </View>
-      )}
+      )} */}
     </View>
   );
 
@@ -863,10 +929,15 @@ export default function CustomerHomeScreen() {
       </View>
       {/* ─────────────────────────────────────────────── */}
 
-      {/* ── Main Product Grid FlatList (3-Column Compact Grid) ── */}
-      <FlatList
+      {/* ── Main Content: Loader while loading items vs FlatList Grid ── */}
+      {loading ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color="#F7C400" />
+        </View>
+      ) : (
+        <FlatList
         key="product_grid_3col"
-        data={filtered}
+        data={visibleProducts}
         keyExtractor={item => item._id}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -874,6 +945,28 @@ export default function CustomerHomeScreen() {
         columnWrapperStyle={{ gap: PRODUCT_GRID_GAP, paddingHorizontal: PRODUCT_GRID_PADDING }}
         contentContainerStyle={{ paddingBottom: cartTotalCount > 0 ? 190 : 130 }}
         ListHeaderComponent={renderListHeader()}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        initialNumToRender={12}
+        maxToRenderPerBatch={12}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListFooterComponent={
+          hasMoreProducts ? (
+            <View className="py-6 items-center justify-center">
+              <ActivityIndicator size="small" color="#F7C400" />
+              <Text className="text-[11px] font-bold text-slate-400 mt-2">
+                Loading more items...
+              </Text>
+            </View>
+          ) : filtered.length > INITIAL_PAGE_SIZE ? (
+            <View className="py-6 items-center justify-center">
+              <Text className="text-[11px] font-semibold text-slate-400">
+                ✓ You&apos;ve seen all {filtered.length} products
+              </Text>
+            </View>
+          ) : null
+        }
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -884,41 +977,52 @@ export default function CustomerHomeScreen() {
           />
         }
         ListEmptyComponent={
-          <View className="items-center justify-center py-12 px-6">
-            <View className="w-[72px] h-[72px] rounded-full bg-[#FEF3C7] items-center justify-center mb-4">
-              <Ionicons name="basket-outline" size={36} color="#D97706" />
+          loading ? (
+            <View className="items-center justify-center py-20">
+              <ActivityIndicator size="large" color="#F7C400" />
             </View>
-            <Text className="text-base font-black text-slate-900 text-center">
-              No items match &apos;{searchTerm || selectedTab}&apos;
-            </Text>
-            <Text className="text-xs font-medium text-slate-500 text-center mt-1 max-w-[260px]">
-              Try searching with different keywords or browse our full store categories.
-            </Text>
-            <TouchableOpacity
-              onPress={() => {
-                setSearchTerm('');
-                setSelectedTab('ALL');
-              }}
-              className="mt-4.5 bg-slate-900 px-4 py-2.5 rounded-full"
-            >
-              <Text className="text-[#F7C400] text-xs font-black">
-                Reset & Browse Store
+          ) : (
+            <View className="items-center justify-center py-12 px-6">
+              <View className="w-[72px] h-[72px] rounded-full bg-[#FEF3C7] items-center justify-center mb-4">
+                <Ionicons name="basket-outline" size={36} color="#D97706" />
+              </View>
+              <Text className="text-xl font-bold text-slate-900 text-center">
+                No items match &apos;{searchTerm || selectedTab}&apos;
               </Text>
-            </TouchableOpacity>
-          </View>
+              <Text className="text-xs font-medium text-slate-500 text-center mt-1 max-w-[260px]">
+                Try searching with different keywords or browse our full store categories.
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setSearchTerm('');
+                  setSelectedTab('ALL');
+                }}
+                className="mt-4 bg-slate-900 px-4 py-2.5 rounded-full"
+              >
+                <Text className="text-[#F7C400] text-xs font-black">
+                  Reset & Browse Store
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )
         }
         renderItem={({ item }) => {
           const qtyInCart = getItemQtyInCart(item._id);
+          const isItemOutOfStock = (item.stockQty !== undefined && item.stockQty !== null && item.stockQty <= 0) &&
+            (!item.variants || item.variants.length === 0 || item.variants.every(v => v.stockQty <= 0));
           const discount = item.mrp > item.sellingPrice
             ? Math.round(((item.mrp - item.sellingPrice) / item.mrp) * 100)
             : 0;
 
           return (
             <View
-              style={{ width: PRODUCT_ITEM_WIDTH }}
+              style={{ width: PRODUCT_ITEM_WIDTH, opacity: isItemOutOfStock ? 0.6 : 1 }}
               className="mb-4 justify-between"
             >
-              <View>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setSelectedProductForDetail(item)}
+              >
                 {/* Product Image Frame (Taller Aspect Ratio) */}
                 <View className="w-full aspect-[1/1.18] rounded-2xl overflow-hidden bg-slate-50 relative mb-1.5">
                   <Image
@@ -927,8 +1031,8 @@ export default function CustomerHomeScreen() {
                     resizeMode="cover"
                   />
 
-                  {/* Refined Frosted Discount Badge (No solid green bg) */}
-                  {discount > 0 && (
+                  {/* Refined Frosted Discount Badge */}
+                  {discount > 0 && !isItemOutOfStock && (
                     <View className="absolute top-1.5 left-1.5 bg-white/95 px-1.5 py-0.5 rounded-md shadow-xs border border-emerald-200/60 z-10">
                       <Text className="text-emerald-700 text-[9px] font-black tracking-tight">
                         {discount}% OFF
@@ -936,10 +1040,37 @@ export default function CustomerHomeScreen() {
                     </View>
                   )}
 
+                  {/* Out of Stock Overlay */}
+                  {isItemOutOfStock && (
+                    <View className="absolute inset-0 bg-slate-950/45 items-center justify-center p-1 z-10">
+                      <View className="bg-rose-600 px-1.5 py-0.5 rounded shadow-sm">
+                        <Text className="text-white text-[8px] font-black uppercase tracking-wider">Out of Stock</Text>
+                      </View>
+                    </View>
+                  )}
+
                   {/* Add Button: Compact when 0, Full-Width Bar across bottom when added */}
-                  {qtyInCart === 0 ? (
+                  {isItemOutOfStock ? (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        bottom: 6,
+                        right: 6,
+                        backgroundColor: '#F1F5F9',
+                        paddingHorizontal: 6,
+                        paddingVertical: 3,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: '#E2E8F0',
+                        zIndex: 20,
+                      }}
+                    >
+                      <Text style={{ fontSize: 8.5, fontWeight: '800', color: '#64748B' }}>OUT</Text>
+                    </View>
+                  ) : qtyInCart === 0 ? (
                     <TouchableOpacity
-                      onPress={() => {
+                      onPress={(e) => {
+                        e.stopPropagation?.();
                         triggerHaptic();
                         addToCart(item);
                       }}
@@ -990,9 +1121,9 @@ export default function CustomerHomeScreen() {
                         zIndex: 20,
                       }}
                     >
-                      {/* Minus Gray Action Button (matching active tab bar gray) */}
                       <TouchableOpacity
-                        onPress={() => {
+                        onPress={(e) => {
+                          e.stopPropagation?.();
                           triggerHaptic();
                           updateCartQty(item._id, -1);
                         }}
@@ -1010,7 +1141,6 @@ export default function CustomerHomeScreen() {
                         <Ionicons name="remove" size={14} color="#FFC107" />
                       </TouchableOpacity>
 
-                      {/* Quantity in Center */}
                       <Text
                         style={{
                           color: '#111827',
@@ -1022,11 +1152,16 @@ export default function CustomerHomeScreen() {
                         {qtyInCart}
                       </Text>
 
-                      {/* Plus Gray Action Button (matching active tab bar gray) */}
                       <TouchableOpacity
-                        onPress={() => {
+                        disabled={item.stockQty !== undefined && item.stockQty !== null && qtyInCart >= item.stockQty}
+                        onPress={(e) => {
+                          e.stopPropagation?.();
+                          if (item.stockQty !== undefined && item.stockQty !== null && qtyInCart >= item.stockQty) {
+                            triggerHaptic();
+                            return;
+                          }
                           triggerHaptic();
-                          updateCartQty(item._id, 1);
+                          updateCartQty(item._id, 1, item.stockQty);
                         }}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         activeOpacity={0.7}
@@ -1037,6 +1172,7 @@ export default function CustomerHomeScreen() {
                           backgroundColor: '#EAEAEA',
                           alignItems: 'center',
                           justifyContent: 'center',
+                          opacity: (item.stockQty !== undefined && item.stockQty !== null && qtyInCart >= item.stockQty) ? 0.35 : 1,
                         }}
                       >
                         <Ionicons name="add" size={14} color="#FFC107" />
@@ -1045,7 +1181,7 @@ export default function CustomerHomeScreen() {
                   )}
                 </View>
 
-                {/* Product Name First (2 full lines visible) */}
+                {/* Product Name First */}
                 <Text
                   numberOfLines={2}
                   className="text-[11.5px] font-bold text-slate-900 leading-[16px] min-h-[34px] mt-1"
@@ -1053,14 +1189,18 @@ export default function CustomerHomeScreen() {
                   {item.name}
                 </Text>
 
-                {/* Unit Below Name (e.g. 1 pc / 1 L) */}
+                {/* Unit Below Name */}
                 <Text className="text-[10px] font-semibold text-slate-400 mt-0.5" numberOfLines={1}>
                   {item.unit || '1 pc'}
                 </Text>
-              </View>
+              </TouchableOpacity>
 
               {/* Price Row: Selling Price + Struck-through MRP */}
-              <View className="mt-1">
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setSelectedProductForDetail(item)}
+                className="mt-1"
+              >
                 <View className="flex-row items-baseline">
                   <Text className="text-[13px] font-black text-slate-900">
                     ₹{item.sellingPrice}
@@ -1071,11 +1211,12 @@ export default function CustomerHomeScreen() {
                     </Text>
                   )}
                 </View>
-              </View>
+              </TouchableOpacity>
             </View>
           );
         }}
       />
+      )}
 
       {/* ══════════════════════════════════════════════════════
           PREMIUM FLOATING VIEW CART PILL
@@ -1125,6 +1266,17 @@ export default function CustomerHomeScreen() {
           setSearchTerm(query);
           setSelectedTab('ALL');
         }}
+      />
+
+      {/* ── Product Detail Bottom Sheet Modal ── */}
+      <ProductDetailModal
+        visible={!!selectedProductForDetail}
+        product={selectedProductForDetail}
+        onClose={() => setSelectedProductForDetail(null)}
+        addToCart={addToCart}
+        updateCartQty={updateCartQty}
+        getItemQtyInCart={getItemQtyInCart}
+        apiBaseUrl={apiBaseUrl}
       />
 
     </SafeAreaView>

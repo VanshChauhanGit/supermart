@@ -8,7 +8,8 @@ import {
   TouchableOpacity,
   Alert,
   Linking,
-  ActivityIndicator
+  ActivityIndicator,
+  Image
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -16,57 +17,104 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../../context/AppContext';
 
+// High-resolution fallback imagery for grocery categories & keywords
+const FALLBACK_CATEGORY_IMAGES = {
+  milk: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=400&q=80',
+  atta: 'https://images.unsplash.com/photo-1574316071802-0d684efa7bf5?auto=format&fit=crop&w=400&q=80',
+  bread: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=400&q=80',
+  fruits: 'https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=400&q=80',
+  snacks: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?auto=format&fit=crop&w=400&q=80',
+  drinks: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80',
+  spices: 'https://images.unsplash.com/photo-1596462502278-27bf85033e5a?auto=format&fit=crop&w=400&q=80',
+  default: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80'
+};
+
+const resolveItemImage = (item, catalogMap) => {
+  if (item?.imageUrl && item.imageUrl.startsWith('http')) return item.imageUrl;
+  if (item?.image && item.image.startsWith('http')) return item.image;
+
+  if (item?.productId && catalogMap[item.productId]?.imageUrl) {
+    return catalogMap[item.productId].imageUrl;
+  }
+
+  const nameKey = (item?.name || '').toLowerCase();
+  if (catalogMap[nameKey]?.imageUrl) {
+    return catalogMap[nameKey].imageUrl;
+  }
+
+  if (nameKey.includes('milk') || nameKey.includes('dairy') || nameKey.includes('paneer') || nameKey.includes('curd') || nameKey.includes('amul')) {
+    return FALLBACK_CATEGORY_IMAGES.milk;
+  }
+  if (nameKey.includes('atta') || nameKey.includes('flour') || nameKey.includes('wheat') || nameKey.includes('maida')) {
+    return FALLBACK_CATEGORY_IMAGES.atta;
+  }
+  if (nameKey.includes('bread') || nameKey.includes('bun') || nameKey.includes('toast') || nameKey.includes('pav')) {
+    return FALLBACK_CATEGORY_IMAGES.bread;
+  }
+  if (nameKey.includes('chip') || nameKey.includes('snack') || nameKey.includes('biscuit') || nameKey.includes('cookie') || nameKey.includes('namkeen') || nameKey.includes('maggi') || nameKey.includes('noodle')) {
+    return FALLBACK_CATEGORY_IMAGES.snacks;
+  }
+  if (nameKey.includes('juice') || nameKey.includes('coke') || nameKey.includes('drink') || nameKey.includes('soda') || nameKey.includes('water') || nameKey.includes('tea') || nameKey.includes('coffee')) {
+    return FALLBACK_CATEGORY_IMAGES.drinks;
+  }
+  if (nameKey.includes('oil') || nameKey.includes('ghee') || nameKey.includes('masala') || nameKey.includes('rice') || nameKey.includes('dal') || nameKey.includes('sugar') || nameKey.includes('salt')) {
+    return FALLBACK_CATEGORY_IMAGES.spices;
+  }
+  if (nameKey.includes('apple') || nameKey.includes('banana') || nameKey.includes('fruit') || nameKey.includes('onion') || nameKey.includes('potato') || nameKey.includes('tomato') || nameKey.includes('vegetable')) {
+    return FALLBACK_CATEGORY_IMAGES.fruits;
+  }
+
+  return FALLBACK_CATEGORY_IMAGES.default;
+};
+
+// Clean formatted address without raw Google Plus Codes
+const cleanFormattedAddress = (rawAddress) => {
+  if (!rawAddress) return 'Doorstep Delivery';
+  let cleaned = rawAddress.replace(/^[A-Z0-9]{4,8}\+[A-Z0-9]{2,4},\s*/i, '');
+  return cleaned.trim() || rawAddress;
+};
+
 // Order Status Visual Configuration
 const STATUS_META = {
   PENDING: {
     label: 'Order Placed',
     subtext: 'Store is reviewing your order',
-    textColor: 'text-amber-800',
-    bg: 'bg-amber-50',
-    border: 'border-amber-200',
+    textColor: '#92400E',
     badgeBg: '#FEF3C7',
-    badgeText: '#92400E',
+    badgeBorder: '#FDE68A',
     icon: 'time-outline'
   },
   ACCEPTED: {
     label: 'Packing Items',
     subtext: 'Order is being prepared and packed',
-    textColor: 'text-blue-800',
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
+    textColor: '#1E40AF',
     badgeBg: '#DBEAFE',
-    badgeText: '#1E40AF',
+    badgeBorder: '#BFDBFE',
     icon: 'cube-outline'
   },
   OUT_FOR_DELIVERY: {
     label: 'Out for Delivery',
-    subtext: 'Delivery partner is on the way (10-15 mins)',
-    textColor: 'text-purple-800',
-    bg: 'bg-purple-50',
-    border: 'border-purple-200',
+    subtext: 'Delivery partner is on the way (6-8 mins)',
+    textColor: '#6B21A8',
     badgeBg: '#F3E8FF',
-    badgeText: '#6B21A8',
+    badgeBorder: '#E9D5FF',
     icon: 'bicycle-outline'
   },
   DELIVERED: {
     label: 'Delivered',
     subtext: 'Delivered to your doorstep',
-    textColor: 'text-emerald-800',
-    bg: 'bg-emerald-50',
-    border: 'border-emerald-200',
-    badgeBg: '#DCFCE7',
-    badgeText: '#166534',
-    icon: 'checkmark-done-circle'
+    textColor: '#047857',
+    badgeBg: '#ECFDF5',
+    badgeBorder: '#A7F3D0',
+    icon: 'checkmark-circle'
   },
   CANCELLED: {
     label: 'Cancelled',
     subtext: 'This order was cancelled',
-    textColor: 'text-rose-800',
-    bg: 'bg-rose-50',
-    border: 'border-rose-200',
-    badgeBg: '#FFE4E6',
-    badgeText: '#9F1239',
-    icon: 'close-circle-outline'
+    textColor: '#BE123C',
+    badgeBg: '#FFF1F2',
+    badgeBorder: '#FECDD3',
+    icon: 'close-circle'
   }
 };
 
@@ -82,11 +130,12 @@ export default function CustomerOrdersScreen() {
   const { customerUser, apiBaseUrl, socket, addToCart } = useApp();
 
   const [orders, setOrders] = useState([]);
+  const [catalogMap, setCatalogMap] = useState({});
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'DELIVERED'
   const [expandedOrderIds, setExpandedOrderIds] = useState(new Set());
-  const [lastSyncTime, setLastSyncTime] = useState(new Date());
 
   // Haptic Feedback helper
   const triggerHaptic = () => {
@@ -95,8 +144,29 @@ export default function CustomerOrdersScreen() {
     } catch (_e) {}
   };
 
+  // Fetch catalog products to supplement missing images in old orders
+  const fetchCatalogMap = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBaseUrl}/products`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        const map = {};
+        data.data.forEach(p => {
+          if (p._id) map[p._id] = p;
+          if (p.name) map[p.name.toLowerCase()] = p;
+        });
+        setCatalogMap(map);
+      }
+    } catch (_e) {
+      // ignore
+    }
+  }, [apiBaseUrl]);
+
   const fetchLiveOrders = useCallback(async (isManual = false) => {
-    if (!customerUser?.phone) return;
+    if (!customerUser?.phone) {
+      setLoading(false);
+      return;
+    }
     if (isManual) setSyncing(true);
     try {
       const cleanPhone = customerUser.phone.replace(/\D/g, '');
@@ -104,12 +174,12 @@ export default function CustomerOrdersScreen() {
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
         setOrders(data.data);
-        setLastSyncTime(new Date());
       }
     } catch (_e) {
       // ignore
     } finally {
       if (isManual) setSyncing(false);
+      setLoading(false);
     }
   }, [customerUser, apiBaseUrl]);
 
@@ -117,7 +187,7 @@ export default function CustomerOrdersScreen() {
   useEffect(() => {
     let isMounted = true;
     const loadData = async () => {
-      if (isMounted) await fetchLiveOrders();
+      await Promise.all([fetchLiveOrders(), fetchCatalogMap()]);
     };
     loadData();
 
@@ -139,12 +209,12 @@ export default function CustomerOrdersScreen() {
     return () => {
       isMounted = false;
     };
-  }, [fetchLiveOrders, socket]);
+  }, [fetchLiveOrders, fetchCatalogMap, socket]);
 
   const onManualRefresh = async () => {
     setRefreshing(true);
     triggerHaptic();
-    await fetchLiveOrders();
+    await Promise.all([fetchLiveOrders(), fetchCatalogMap()]);
     setRefreshing(false);
   };
 
@@ -168,17 +238,19 @@ export default function CustomerOrdersScreen() {
     if (!order.items || order.items.length === 0) return;
 
     order.items.forEach(item => {
+      const catalogItem = catalogMap[item.productId] || catalogMap[item.name?.toLowerCase()];
       addToCart({
         _id: item.productId || `reorder_${Math.random()}`,
         name: item.name,
         sellingPrice: item.price,
-        unit: item.unit || '1 pc'
+        unit: item.unit || '1 pc',
+        imageUrl: item.imageUrl || catalogItem?.imageUrl || resolveItemImage(item, catalogMap)
       });
     });
 
     Alert.alert(
       'Items Added to Basket! ⚡',
-      `${order.items.length} items from Order #${order.orderNo} have been added to your cart.`,
+      `${order.items.length} items from Order #${order.orderNo} added to your cart.`,
       [
         { text: 'Keep Browsing', style: 'cancel' },
         {
@@ -194,7 +266,7 @@ export default function CustomerOrdersScreen() {
     triggerHaptic();
     Alert.alert(
       `Support for Order #${order.orderNo}`,
-      `Need help with your 10-minute delivery?\n\nStore Helpline: +91 98765 43210\nOrder Status: ${order.status.replace(/_/g, ' ')}`,
+      `Need assistance with your delivery?\n\nStore Helpline: +91 98765 43210\nOrder Status: ${order.status.replace(/_/g, ' ')}`,
       [
         { text: 'Close', style: 'cancel' },
         {
@@ -225,7 +297,7 @@ export default function CustomerOrdersScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* ══════════════════════════════════════════════════════
-          1. PREMIUM STICKY HEADER (Theme of Home Screen)
+          1. PREMIUM STICKY HEADER (Theme of Storefront)
           ══════════════════════════════════════════════════════ */}
       <View
         className="bg-white border-b border-slate-200/80 shadow-xs z-30"
@@ -254,10 +326,6 @@ export default function CustomerOrdersScreen() {
                 <Text className="text-lg font-black text-slate-900 tracking-tight mr-2">
                   My Orders
                 </Text>
-                {/* <View className="bg-[#FEF08A] px-2 py-0.5 rounded-md flex-row items-center">
-                  <Ionicons name="flash" size={10} color="#854D0E" />
-                  <Text className="text-[10px] font-black text-[#854D0E] ml-0.5">LIVE TRACK</Text>
-                </View> */}
               </View>
               <Text className="text-[11px] font-semibold text-slate-500">
                 {orders.length} {orders.length === 1 ? 'order' : 'orders'} placed
@@ -284,26 +352,9 @@ export default function CustomerOrdersScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Real-Time Status & Filter Tabs ── */}
+        {/* ── Filter Tabs ── */}
         <View className="px-4 pb-2.5 pt-1">
-          {/* Live Auto-Sync Status Bar */}
-          {/* <View className="flex-row items-center justify-between bg-slate-50 border border-slate-200/80 px-3 py-1.5 rounded-xl mb-2.5">
-            <View className="flex-row items-center">
-              <View className="w-2 h-2 rounded-full bg-emerald-500 mr-2" />
-              <Text className="text-[10px] font-black text-slate-700 tracking-wide uppercase">
-                Instant Socket Sync
-              </Text>
-            </View>
-            <View className="flex-row items-center">
-              <Ionicons name="time-outline" size={11} color="#64748B" style={{ marginRight: 3 }} />
-              <Text className="text-[10px] font-bold text-slate-500">
-                Updated {lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-              </Text>
-            </View>
-          </View> */}
-
-          {/* Filter Pills */}
-          <View className="flex-row items-center space-x-2">
+          <View className="flex-row items-center">
             {[
               { id: 'ALL', label: 'All Orders', count: orders.length },
               { id: 'ACTIVE', label: 'Live Active', count: activeOrdersCount },
@@ -318,7 +369,7 @@ export default function CustomerOrdersScreen() {
                     setActiveTab(tab.id);
                   }}
                   activeOpacity={0.7}
-                  className={`flex-row items-center px-3 py-1.5 rounded-full border mr-2 ${
+                  className={`flex-row items-center px-3.5 py-1.5 rounded-full border mr-2 ${
                     isActive
                       ? 'bg-slate-900 border-slate-900 shadow-xs'
                       : 'bg-white border-slate-200'
@@ -327,7 +378,7 @@ export default function CustomerOrdersScreen() {
                   <Text className={`text-xs ${isActive ? 'font-black text-[#F7C400]' : 'font-bold text-slate-600'}`}>
                     {tab.label}
                   </Text>
-                  <View className={`ml-1.5 px-1.5 py-0.2 rounded-full ${
+                  <View className={`ml-1.5 px-1.5 py-0.5 rounded-full ${
                     isActive ? 'bg-slate-800' : 'bg-slate-100'
                   }`}>
                     <Text className={`text-[10px] ${isActive ? 'font-black text-white' : 'font-bold text-slate-500'}`}>
@@ -344,8 +395,12 @@ export default function CustomerOrdersScreen() {
       {/* ══════════════════════════════════════════════════════
           2. SCROLLABLE ORDERS CONTENT
           ══════════════════════════════════════════════════════ */}
-      {filteredOrders.length === 0 ? (
-        /* ── Empty Orders State (Theme of Home Screen) ── */
+      {loading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color="#F7C400" />
+        </View>
+      ) : filteredOrders.length === 0 ? (
+        /* ── Empty Orders State ── */
         <View className="flex-1 items-center justify-center px-6">
           <View className="w-24 h-24 rounded-full bg-[#FEF3C7] border-2 border-[#FDE68A] items-center justify-center mb-5 shadow-sm">
             <Ionicons name="receipt-outline" size={48} color="#D97706" />
@@ -355,12 +410,12 @@ export default function CustomerOrdersScreen() {
               ? 'No Live Orders Currently'
               : activeTab === 'DELIVERED'
               ? 'No Delivered Orders Yet'
-              : 'No Delivery Orders Yet'}
+              : 'No Orders Yet'}
           </Text>
           <Text className="text-xs font-medium text-slate-500 text-center mt-1.5 mb-6 max-w-[280px] leading-relaxed">
             {activeTab === 'ACTIVE'
-              ? 'All your past orders have been completed or delivered. Place a new 10-minute delivery to track live progress!'
-              : 'Order your daily groceries, fresh milk, vegetables & household snacks for 10-minute express doorstep delivery.'}
+              ? 'All your past orders have been completed or delivered. Place a new order to track live delivery!'
+              : 'Order your daily groceries, fresh milk, fruits & snacks for 10-minute express doorstep delivery.'}
           </Text>
           <TouchableOpacity
             onPress={() => {
@@ -382,7 +437,7 @@ export default function CustomerOrdersScreen() {
           contentContainerStyle={{
             paddingHorizontal: 16,
             paddingTop: 14,
-            paddingBottom: Math.max(insets.bottom, 8) + 90
+            paddingBottom: Math.max(insets.bottom, 16) + 115
           }}
           refreshControl={
             <RefreshControl
@@ -397,7 +452,12 @@ export default function CustomerOrdersScreen() {
           {filteredOrders.map(order => {
             const isCancelled = order.status === 'CANCELLED';
             const isDelivered = order.status === 'DELIVERED';
-            const isActiveOrder = ['PENDING', 'ACCEPTED', 'OUT_FOR_DELIVERY'].includes(order.status);
+            const isAccepted = ['ACCEPTED', 'PACKING', 'OUT_FOR_DELIVERY'].includes(order.status);
+            const isRiderAssigned = Boolean(
+              order.assignedDeliveryRider &&
+              order.assignedDeliveryRider.trim() !== '' &&
+              order.assignedDeliveryRider.toLowerCase() !== 'unassigned'
+            );
             const statusConfig = STATUS_META[order.status] || STATUS_META.PENDING;
 
             // Tracking steps calculation
@@ -405,142 +465,138 @@ export default function CustomerOrdersScreen() {
             const effectiveStepIdx = currentStepIdx === -1 ? 0 : currentStepIdx;
 
             const isExpanded = expandedOrderIds.has(order._id);
-            const totalItemCount = (order.items || []).reduce((acc, i) => acc + (i.quantity || 1), 0);
+            const orderItems = order.items || [];
+            const totalItemCount = orderItems.reduce((acc, i) => acc + (i.quantity || 1), 0);
+
+            // Names summary: e.g. "Amul Milk, Aashirvaad Atta + 1 more"
+            const firstItemNames = orderItems.slice(0, 2).map(i => i.name).join(', ');
+            const remainingItemNamesCount = orderItems.length > 2 ? orderItems.length - 2 : 0;
+            const itemsTextSummary = firstItemNames
+              ? `${firstItemNames}${remainingItemNamesCount > 0 ? ` +${remainingItemNamesCount} more` : ''}`
+              : `${totalItemCount} items`;
+
+            const displayAddress = cleanFormattedAddress(order.deliveryAddress || order.location?.formattedAddress);
 
             return (
               <View
                 key={order._id}
-                className="bg-white rounded-2xl p-3 mb-4 border border-slate-200/90 shadow-xs"
+                className="bg-white rounded-2xl p-4 mb-4 border border-slate-200/80 shadow-sm"
               >
-                {/* ── Order Top Bar: Number & Status Badge ── */}
-                <View className="flex-row items-center justify-between pb-3 border-b border-slate-100">
-                  <View className="flex-1 mr-2">
-                    <View className="flex-row items-center">
-                      <View className="w-7 h-7 rounded-lg bg-[#FEF3C7] items-center justify-center mr-2">
-                        <Ionicons name="bag-handle" size={14} color="#D97706" />
-                      </View>
-                      <Text className="text-md font-black text-slate-900 tracking-tight">
-                        Order #{order.orderNo}
-                      </Text>
+                {/* ── Order Top Bar: Store Brand Icon, Number & Status Badge ── */}
+                <View className="flex-row items-start justify-between pb-3 border-b border-slate-100">
+                  <View className="flex-row items-center flex-1 mr-2">
+                    <View className="w-9 h-9 rounded-xl bg-[#FEF3C7] border border-[#FDE68A] items-center justify-center mr-2.5 shadow-xs">
+                      <Ionicons name="bag-handle" size={16} color="#D97706" />
                     </View>
-                    <Text className="text-[11px] font-semibold text-slate-400 ml-9">
-                      {order.createdAt
-                        ? new Date(order.createdAt).toLocaleDateString('en-IN', {
-                            day: 'numeric',
-                            month: 'short',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })
-                        : 'Recent Order'}
-                    </Text>
+                    <View className="flex-1">
+                      <View className="flex-row items-center">
+                        <Text className="text-sm font-black text-slate-900 tracking-tight">
+                          Order #{order.orderNo}
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center mt-0.5">
+                        <Ionicons name="time-outline" size={11} color="#94A3B8" style={{ marginRight: 3 }} />
+                        <Text className="text-[11px] font-semibold text-slate-400">
+                          {order.createdAt
+                            ? new Date(order.createdAt).toLocaleDateString('en-IN', {
+                                day: 'numeric',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })
+                            : 'Recent Order'}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
 
                   {/* Status Badge */}
                   <View
-                    className="flex-row items-center px-3 py-1 rounded-full border border-slate-200/60"
-                    style={{ backgroundColor: statusConfig.badgeBg }}
+                    className="flex-row items-center px-2.5 py-1 rounded-full border"
+                    style={{
+                      backgroundColor: statusConfig.badgeBg,
+                      borderColor: statusConfig.badgeBorder
+                    }}
                   >
                     <Ionicons
                       name={statusConfig.icon}
                       size={12}
-                      color={statusConfig.badgeText}
+                      color={statusConfig.textColor}
                       style={{ marginRight: 4 }}
                     />
                     <Text
                       className="text-[11px] font-black uppercase tracking-wide"
-                      style={{ color: statusConfig.badgeText }}
+                      style={{ color: statusConfig.textColor }}
                     >
                       {statusConfig.label}
                     </Text>
                   </View>
                 </View>
 
-                {/* ── 1. Dynamic ETA Countdown & Live Active Delivery Banner ── */}
-                {isActiveOrder ? (
-                  <View className="mt-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 rounded-2xl p-3.5">
-                    <View className="flex-row items-center justify-between mb-2">
+                {/* ── 1. Live Active Delivery Banner (Only when order is ACCEPTED) ── */}
+                {isAccepted && (
+                  <View className="mt-3.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 rounded-2xl p-3.5">
+                    <View className="flex-row items-center justify-between mb-2.5">
                       <View className="flex-row items-center flex-1 mr-2">
                         <View className="w-9 h-9 rounded-xl bg-[#F7C400] items-center justify-center mr-2.5 shadow-sm">
                           <Ionicons
-                            name={order.status === 'OUT_FOR_DELIVERY' ? 'bicycle' : order.status === 'ACCEPTED' ? 'cube' : 'time'}
-                            size={19}
+                            name={order.status === 'OUT_FOR_DELIVERY' ? 'bicycle' : 'cube'}
+                            size={18}
                             color="#0F172A"
                           />
                         </View>
                         <View className="flex-1">
-                          <View className="flex-row items-center">
-                            <Text className="text-xs font-black text-slate-900 tracking-tight">
-                              {order.status === 'OUT_FOR_DELIVERY'
-                                ? 'Arriving in ~6 to 8 mins ⚡'
-                                : order.status === 'ACCEPTED'
-                                ? 'Packing fresh items • ~12 mins'
-                                : 'Order Confirmed • ~15 mins'}
-                            </Text>
-                          </View>
+                          <Text className="text-xs font-black text-slate-900 tracking-tight">
+                            {order.status === 'OUT_FOR_DELIVERY'
+                              ? 'Arriving in ~6 to 8 mins ⚡'
+                              : 'Packing fresh items • ~12 mins'}
+                          </Text>
                           <Text className="text-[10px] font-bold text-amber-800 mt-0.5">
                             {order.status === 'OUT_FOR_DELIVERY'
-                              ? 'Delivery partner is on the way to your doorstep'
-                              : order.status === 'ACCEPTED'
-                              ? 'Store team is packing fresh groceries'
-                              : 'Store has accepted your order'}
+                              ? 'Delivery rider is on the way to your doorstep'
+                              : 'Store team is packing the order'}
                           </Text>
                         </View>
                       </View>
 
-                      {/* Live Status Pulse Dot */}
-                      <View className="flex-row items-center bg-white/90 px-2.5 py-1 rounded-full border border-amber-200">
+                      {/* Live Pulse Badge */}
+                      <View className="flex-row items-center bg-white px-2 py-0.5 rounded-full border border-amber-200 shadow-xs">
                         <View className="w-2 h-2 rounded-full bg-emerald-500 mr-1.5" />
-                        <Text className="text-[10px] font-black text-slate-800 uppercase tracking-wider">
+                        <Text className="text-[9px] font-black text-slate-800 uppercase tracking-wider">
                           LIVE
                         </Text>
                       </View>
                     </View>
 
-                    {/* Rider Details & Direct Call (If Assigned) */}
-                    <View className="pt-2 border-t border-amber-200/60 flex-row items-center justify-between">
+                    {/* Rider Details & Direct Call (Only if Rider is Assigned) */}
+                    <View className="pt-2 border-t border-amber-200/70 flex-row items-center justify-between">
                       <View className="flex-row items-center flex-1 mr-2">
-                        <Ionicons name="person-circle-outline" size={16} color="#D97706" style={{ marginRight: 5 }} />
+                        <Ionicons name="person-circle" size={17} color="#D97706" style={{ marginRight: 5 }} />
                         <Text numberOfLines={1} className="text-xs font-bold text-slate-700">
-                          Rider: <Text className="font-black text-slate-900">{order.assignedDeliveryRider || 'Supermart Express Rider'}</Text>
+                          Rider:{' '}
+                          <Text className={isRiderAssigned ? "font-black text-slate-900" : "font-semibold text-slate-500"}>
+                            {isRiderAssigned ? order.assignedDeliveryRider : 'Assigning partner...'}
+                          </Text>
                         </Text>
                       </View>
 
-                      <TouchableOpacity
-                        onPress={() => Linking.openURL(`tel:${order.riderPhone || '9876543210'}`).catch(() => {})}
-                        activeOpacity={0.8}
-                        className="bg-slate-900 px-3 py-1.5 rounded-xl flex-row items-center"
-                      >
-                        <Ionicons name="call" size={11} color="#F7C400" style={{ marginRight: 4 }} />
-                        <Text className="text-[11px] font-black text-[#F7C400]">Call Rider</Text>
-                      </TouchableOpacity>
+                      {isRiderAssigned && order.riderPhone ? (
+                        <TouchableOpacity
+                          onPress={() => Linking.openURL(`tel:${order.riderPhone}`).catch(() => {})}
+                          activeOpacity={0.8}
+                          className="bg-slate-900 px-3 py-1.5 rounded-xl flex-row items-center shadow-xs active:bg-slate-800"
+                        >
+                          <Ionicons name="call" size={11} color="#F7C400" style={{ marginRight: 4 }} />
+                          <Text className="text-[11px] font-black text-[#F7C400]">Call Rider</Text>
+                        </TouchableOpacity>
+                      ) : null}
                     </View>
                   </View>
-                ) : isDelivered ? (
-                  <View className="mt-3 bg-emerald-50 border border-emerald-200 rounded-2xl p-3 flex-row items-center justify-between">
-                    <View className="flex-row items-center">
-                      <View className="w-8 h-8 rounded-xl bg-emerald-500 items-center justify-center mr-2.5">
-                        <Ionicons name="checkmark-done" size={18} color="#FFFFFF" />
-                      </View>
-                      <View>
-                        <Text className="text-xs font-black text-emerald-900">
-                          Delivered Successfully!
-                        </Text>
-                        <Text className="text-[10px] font-semibold text-emerald-700 mt-0.5">
-                          {order.statusTimestamps?.deliveredAt
-                            ? `Completed at ${new Date(order.statusTimestamps.deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                            : 'Package handed over at your doorstep'}
-                        </Text>
-                      </View>
-                    </View>
-                    <View className="bg-emerald-100 px-2.5 py-1 rounded-full">
-                      <Text className="text-[10px] font-black text-emerald-800">COMPLETED</Text>
-                    </View>
-                  </View>
-                ) : null}
+                )}
 
-                {/* ── 2. Delivery Confirmation OTP Card (Prominent Security PIN) ── */}
-                {isActiveOrder && order.deliveryOtp && (
-                  <View className="mt-3 bg-slate-900 rounded-2xl p-3.5 border border-slate-800 shadow-xs">
+                {/* ── 2. Delivery Confirmation OTP Card (Only for Active / Non-Delivered Orders) ── */}
+                {!isDelivered && !isCancelled && order.deliveryOtp && (
+                  <View className="mt-3 bg-slate-900 rounded-2xl p-3 border border-slate-800 shadow-sm">
                     <View className="flex-row items-center justify-between mb-2">
                       <View className="flex-row items-center">
                         <Ionicons name="shield-checkmark" size={14} color="#F7C400" style={{ marginRight: 6 }} />
@@ -553,12 +609,12 @@ export default function CustomerOrdersScreen() {
                       </Text>
                     </View>
 
-                    <View className="flex-row items-center justify-between bg-slate-800/80 rounded-xl p-2.5 border border-slate-700/80">
-                      <View className="flex-row items-center space-x-2">
+                    <View className="flex-row items-center justify-between bg-slate-800/90 rounded-xl p-2.5 border border-slate-700">
+                      <View className="flex-row items-center">
                         {String(order.deliveryOtp).split('').map((digit, dIdx) => (
                           <View
                             key={dIdx}
-                            className="w-8 h-9 rounded-lg bg-slate-900 border border-[#F7C400]/40 items-center justify-center mr-1.5"
+                            className="w-8 h-8 rounded-lg bg-slate-950 border border-[#F7C400]/50 items-center justify-center mr-1.5"
                           >
                             <Text className="text-base font-black text-[#F7C400]">
                               {digit}
@@ -576,14 +632,19 @@ export default function CustomerOrdersScreen() {
                   </View>
                 )}
 
-                {/* ── 3. Progress Stepper with Vector Icons ── */}
-                {!isCancelled ? (
-                  <View className="my-3.5 bg-[#F8FAFC] p-3.5 rounded-2xl border border-slate-200/80">
-                    <Text className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3">
-                      DELIVERY PROGRESS
-                    </Text>
+                {/* ── 3. Progress Stepper (Only for Active / Non-Delivered Orders) ── */}
+                {!isCancelled && !isDelivered ? (
+                  <View className="my-3 bg-[#F8FAFC] p-3 rounded-2xl border border-slate-200/80">
+                    <View className="flex-row items-center justify-between mb-2.5">
+                      <Text className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                        DELIVERY STATUS
+                      </Text>
+                      <Text className="text-[10px] font-bold text-amber-700">
+                        Step {effectiveStepIdx + 1} of 4
+                      </Text>
+                    </View>
 
-                    <View className="flex-row items-center justify-between">
+                    <View className="flex-row items-center justify-between px-1">
                       {TRACKING_STEPS.map((step, idx) => {
                         const isDone = effectiveStepIdx >= idx;
                         const isCurrent = effectiveStepIdx === idx;
@@ -591,23 +652,24 @@ export default function CustomerOrdersScreen() {
                         return (
                           <React.Fragment key={step.key}>
                             {/* Step Node */}
-                            <View className="items-center flex-1">
+                            <View className="items-center" style={{ width: 56 }}>
                               <View
-                                className={`w-8 h-8 rounded-full items-center justify-center mb-1.5 ${
-                                  isDone
-                                    ? isDelivered && idx === 3
-                                      ? 'bg-emerald-600 shadow-xs'
-                                      : 'bg-slate-900 shadow-xs'
+                                className={`w-7 h-7 rounded-full items-center justify-center mb-1.5 ${
+                                  isCurrent
+                                    ? 'bg-slate-900 border-2 border-[#F7C400] shadow-xs'
+                                    : isDone
+                                    ? 'bg-slate-900 shadow-xs'
                                     : 'bg-slate-200'
                                 }`}
                               >
                                 <Ionicons
                                   name={isDone && idx < effectiveStepIdx ? 'checkmark' : step.icon}
-                                  size={14}
+                                  size={13}
                                   color={isDone ? '#F7C400' : '#64748B'}
                                 />
                               </View>
                               <Text
+                                numberOfLines={1}
                                 className={`text-[10px] text-center ${
                                   isCurrent
                                     ? 'font-black text-slate-900'
@@ -615,6 +677,7 @@ export default function CustomerOrdersScreen() {
                                     ? 'font-bold text-slate-700'
                                     : 'font-semibold text-slate-400'
                                 }`}
+                                style={{ width: 56 }}
                               >
                                 {step.label}
                               </Text>
@@ -623,7 +686,7 @@ export default function CustomerOrdersScreen() {
                             {/* Connecting Line */}
                             {idx < TRACKING_STEPS.length - 1 && (
                               <View
-                                className={`h-1 flex-1 mb-5 rounded-full ${
+                                className={`h-1 flex-1 mb-4 rounded-full ${
                                   effectiveStepIdx > idx
                                     ? 'bg-slate-900'
                                     : 'bg-slate-200'
@@ -635,7 +698,7 @@ export default function CustomerOrdersScreen() {
                       })}
                     </View>
                   </View>
-                ) : (
+                ) : isCancelled ? (
                   /* Cancelled Notice */
                   <View className="my-3 bg-rose-50 border border-rose-200 rounded-2xl p-3 flex-row items-center">
                     <Ionicons name="alert-circle" size={18} color="#E11D48" style={{ marginRight: 8 }} />
@@ -648,146 +711,209 @@ export default function CustomerOrdersScreen() {
                       </Text>
                     </View>
                   </View>
-                )}
+                ) : null}
 
-                {/* ── 4. Delivery Address & GPS Coordinates Badge ── */}
-                {order.deliveryAddress && (
-                  <View className="py-2 mb-1 bg-slate-50/70 rounded-xl px-2.5 border border-slate-100">
-                    <View className="flex-row items-center">
-                      <Ionicons name="location-sharp" size={14} color="#D97706" style={{ marginRight: 6 }} />
-                      <Text numberOfLines={1} className="text-xs font-semibold text-slate-600 flex-1">
-                        Delivering to: <Text className="font-bold text-slate-800">{order.deliveryAddress}</Text>
+                {/* ── 4. Premium Product Preview Strip (Quick-Commerce Hallmark) ── */}
+                <View className="my-2 bg-[#F8FAFC] rounded-2xl p-3 border border-slate-200/70">
+                  <View className="flex-row items-center justify-between mb-2">
+                    <View className="flex-row items-center flex-1 mr-2">
+                      <Ionicons name="cart" size={13} color="#64748B" style={{ marginRight: 5 }} />
+                      <Text numberOfLines={1} className="text-xs font-black text-slate-800">
+                        {totalItemCount} {totalItemCount === 1 ? 'Item' : 'Items'} •{' '}
+                        <Text className="font-semibold text-slate-600">{itemsTextSummary}</Text>
                       </Text>
                     </View>
+                  </View>
 
-                    {order.location?.latitude && (
-                      <View className="flex-row items-center mt-1 ml-5">
-                        <View className="bg-emerald-100 px-1.5 py-0.5 rounded-md flex-row items-center mr-2">
-                          <Ionicons name="pin" size={9} color="#065F46" />
-                          <Text className="text-[9px] font-bold text-emerald-800 ml-0.5">
-                            GPS Doorstep Pinned ({order.location.latitude.toFixed(3)}, {order.location.longitude.toFixed(3)})
+                  {/* Horizontal Thumbnail Row */}
+                  <View className="flex-row items-center mt-1">
+                    <View className="flex-row items-center flex-1">
+                      {orderItems.slice(0, 4).map((item, idx) => {
+                        const imgUrl = resolveItemImage(item, catalogMap);
+                        return (
+                          <View
+                            key={idx}
+                            className="w-12 h-12 rounded-xl bg-white border border-slate-200/80 mr-2 overflow-hidden shadow-xs relative"
+                          >
+                            <Image
+                              source={{ uri: imgUrl }}
+                              className="w-full h-full"
+                              resizeMode="cover"
+                            />
+                            {/* Quantity badge */}
+                            <View className="absolute bottom-0 right-0 bg-slate-900/80 px-1 py-0.2 rounded-tl-md">
+                              <Text className="text-[9px] font-black text-white">
+                                {item.quantity || 1}x
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+
+                      {/* Extra Items Counter Chip if > 4 items */}
+                      {orderItems.length > 4 && (
+                        <View className="w-12 h-12 rounded-xl bg-slate-200 border border-slate-300 items-center justify-center">
+                          <Text className="text-xs font-black text-slate-800">
+                            +{orderItems.length - 4}
+                          </Text>
+                          <Text className="text-[8px] font-bold text-slate-500">
+                            more
                           </Text>
                         </View>
-                        {order.location.landmark ? (
-                          <Text numberOfLines={1} className="text-[10px] font-medium text-slate-500 flex-1">
-                            Ref: {order.location.landmark}
-                          </Text>
-                        ) : null}
-                      </View>
-                    )}
-                  </View>
-                )}
-
-                {/* ── Items Summary (Collapsible / Expandable) ── */}
-                <View className="bg-[#F8FAFC] rounded-2xl p-3 mb-3 border border-slate-200/80">
-                  <TouchableOpacity
-                    onPress={() => toggleOrderExpand(order._id)}
-                    activeOpacity={0.7}
-                    className="flex-row items-center justify-between"
-                  >
-                    <View className="flex-row items-center">
-                      <Ionicons name="cart-outline" size={14} color="#64748B" style={{ marginRight: 6 }} />
-                      <Text className="text-xs font-black text-slate-800">
-                        {totalItemCount} {totalItemCount === 1 ? 'Item' : 'Items'} in Order
-                      </Text>
+                      )}
                     </View>
 
-                    <View className="flex-row items-center">
-                      <Text className="text-[11px] font-bold text-slate-500 mr-1">
-                        {isExpanded ? 'Hide Details' : 'View Items'}
+                    {/* View Details Toggle */}
+                    <TouchableOpacity
+                      onPress={() => toggleOrderExpand(order._id)}
+                      activeOpacity={0.7}
+                      className="bg-white border border-slate-200 px-2.5 py-1.5 rounded-xl flex-row items-center shadow-xs ml-1"
+                    >
+                      <Text className="text-[11px] font-black text-slate-700 mr-1">
+                        {isExpanded ? 'Hide Bill' : 'View Bill'}
                       </Text>
                       <Ionicons
                         name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                        size={14}
-                        color="#64748B"
+                        size={12}
+                        color="#475569"
                       />
-                    </View>
-                  </TouchableOpacity>
+                    </TouchableOpacity>
+                  </View>
 
-                  {/* Expanded Items List */}
+                  {/* ── Expanded Full Breakdown Drawer ── */}
                   {isExpanded && (
-                    <View className="mt-2.5 pt-2.5 border-t border-slate-200/70">
-                      {(order.items || []).map((item, idx) => (
-                        <View
-                          key={idx}
-                          className="flex-row justify-between items-center py-1.5 border-b border-slate-100 last:border-b-0"
-                        >
-                          <View className="flex-1 mr-2">
-                            <Text className="text-xs font-bold text-slate-800">
-                              {item.name}
-                            </Text>
-                            <Text className="text-[10px] font-semibold text-slate-400">
-                              Qty: {item.quantity} {item.unit ? `• ${item.unit}` : ''}
+                    <View className="mt-3 pt-3 border-t border-slate-200">
+                      <Text className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">
+                        ITEMIZED RECEIPT
+                      </Text>
+
+                      {orderItems.map((item, idx) => {
+                        const itemImg = resolveItemImage(item, catalogMap);
+                        return (
+                          <View
+                            key={idx}
+                            className="flex-row items-center justify-between py-2 border-b border-slate-100 last:border-b-0"
+                          >
+                            <View className="flex-row items-center flex-1 mr-2">
+                              <Image
+                                source={{ uri: itemImg }}
+                                className="w-9 h-9 rounded-lg bg-white border border-slate-200/70 mr-2.5"
+                                resizeMode="cover"
+                              />
+                              <View className="flex-1">
+                                <Text className="text-xs font-bold text-slate-800">
+                                  {item.name}
+                                </Text>
+                                <Text className="text-[10px] font-semibold text-slate-400 mt-0.5">
+                                  Qty: {item.quantity} {item.unit ? `• ${item.unit}` : ''}
+                                </Text>
+                              </View>
+                            </View>
+                            <Text className="text-xs font-black text-slate-900">
+                              ₹{item.total || (item.price * item.quantity)}
                             </Text>
                           </View>
-                          <Text className="text-xs font-black text-slate-900">
-                            ₹{item.total || (item.price * item.quantity)}
-                          </Text>
-                        </View>
-                      ))}
+                        );
+                      })}
 
-                      {/* Line Breakdown */}
-                      <View className="mt-2 pt-2 border-t border-dashed border-slate-200">
-                        <View className="flex-row justify-between py-0.5">
+                      {/* Detailed Bill Summary Card */}
+                      <View className="mt-2.5 pt-2.5 border-t border-dashed border-slate-300">
+                        <View className="flex-row justify-between py-1">
                           <Text className="text-[11px] font-medium text-slate-500">Items Subtotal</Text>
                           <Text className="text-[11px] font-bold text-slate-800">₹{order.subtotal || order.totalAmount}</Text>
                         </View>
-                        <View className="flex-row justify-between py-0.5">
+                        <View className="flex-row justify-between py-1">
                           <Text className="text-[11px] font-medium text-slate-500">Delivery Fee</Text>
                           <Text className="text-[11px] font-bold text-slate-800">
-                            {order.deliveryFee === 0 ? <Text className="text-emerald-600 font-bold">FREE</Text> : `₹${order.deliveryFee || 0}`}
+                            {order.deliveryFee === 0 ? (
+                              <Text className="text-emerald-600 font-bold">FREE</Text>
+                            ) : (
+                              `₹${order.deliveryFee || 0}`
+                            )}
                           </Text>
                         </View>
                         {order.discountAmount > 0 && (
-                          <View className="flex-row justify-between py-0.5">
+                          <View className="flex-row justify-between py-1">
                             <Text className="text-[11px] font-bold text-emerald-600">
                               Promo Discount {order.discountCode ? `(${order.discountCode})` : ''}
                             </Text>
-                            <Text className="text-[11px] font-bold text-emerald-600">-₹{order.discountAmount}</Text>
+                            <Text className="text-[11px] font-bold text-emerald-600">
+                              -₹{order.discountAmount}
+                            </Text>
                           </View>
                         )}
+                        <View className="flex-row justify-between pt-2 mt-1 border-t border-slate-200">
+                          <Text className="text-xs font-black text-slate-900">Grand Total</Text>
+                          <Text className="text-sm font-black text-slate-900">₹{order.totalAmount}</Text>
+                        </View>
                       </View>
                     </View>
                   )}
                 </View>
 
-                {/* ── Order Footer: Payment & Actions ── */}
+                {/* ── 5. Delivery Address Row ── */}
+                <View className="py-2.5 px-3 mb-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <View className="flex-row items-center">
+                    <Ionicons name="location" size={14} color="#D97706" style={{ marginRight: 6 }} />
+                    <Text numberOfLines={1} className="text-xs font-semibold text-slate-600 flex-1">
+                      Delivered to: <Text className="font-bold text-slate-900">{displayAddress}</Text>
+                    </Text>
+                  </View>
+
+                  {order.location?.latitude && (
+                    <View className="flex-row items-center mt-1 ml-5">
+                      <View className="bg-emerald-100 px-1.5 py-0.5 rounded-md flex-row items-center mr-2">
+                        <Ionicons name="pin" size={9} color="#065F46" />
+                        <Text className="text-[9px] font-bold text-emerald-800 ml-0.5">
+                          GPS Doorstep Verified
+                        </Text>
+                      </View>
+                      {order.location.landmark ? (
+                        <Text numberOfLines={1} className="text-[10px] font-medium text-slate-500 flex-1">
+                          Ref: {order.location.landmark}
+                        </Text>
+                      ) : null}
+                    </View>
+                  )}
+                </View>
+
+                {/* ── 6. Order Footer: Payment Method & High-Contrast CTAs ── */}
                 <View className="flex-row items-center justify-between pt-2 border-t border-slate-100">
                   <View>
                     <View className="flex-row items-center">
                       <Ionicons
-                        name={order.paymentMethod === 'PAYTM' ? 'flash' : 'cash-outline'}
+                        name={order.paymentMethod === 'PAYTM' || order.paymentMethod === 'ONLINE_UPI' ? 'flash' : 'cash-outline'}
                         size={12}
-                        color="#64748B"
+                        color={order.paymentMethod === 'PAYTM' || order.paymentMethod === 'ONLINE_UPI' ? '#0284C7' : '#64748B'}
                         style={{ marginRight: 4 }}
                       />
-                      <Text className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        {order.paymentMethod === 'PAYTM' ? 'Online / Paytm' : 'Cash on Delivery'}
+                      <Text className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                        {order.paymentMethod === 'PAYTM' || order.paymentMethod === 'ONLINE_UPI' ? 'Paid Online' : 'Cash on Delivery'}
                       </Text>
                     </View>
-                    <Text className="text-base font-black text-slate-900 mt-0.5">
+                    <Text className="text-lg font-black text-slate-900 mt-0.5">
                       ₹{order.totalAmount}
                     </Text>
                   </View>
 
                   {/* Actions: Reorder & Help */}
-                  <View className="flex-row items-center space-x-2">
+                  <View className="flex-row items-center">
                     <TouchableOpacity
                       onPress={() => handleSupport(order)}
                       activeOpacity={0.7}
-                      className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white mr-2 flex-row items-center"
+                      className="px-3 py-2 rounded-xl border border-slate-200 bg-white mr-2.5 flex-row items-center shadow-xs active:bg-slate-100"
                     >
-                      <Ionicons name="help-buoy-outline" size={13} color="#0F172A" style={{ marginRight: 4 }} />
-                      <Text className="text-[11px] font-bold text-slate-700">Help</Text>
+                      <Ionicons name="headset-outline" size={14} color="#0F172A" style={{ marginRight: 4 }} />
+                      <Text className="text-xs font-bold text-slate-700">Help</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       onPress={() => handleReorder(order)}
                       activeOpacity={0.85}
-                      className="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-[#F7C400] flex-row items-center shadow-xs"
+                      className="px-4 py-2 rounded-xl bg-slate-900 border border-[#F7C400] flex-row items-center shadow-sm active:bg-slate-800"
                     >
-                      <Ionicons name="repeat" size={13} color="#F7C400" style={{ marginRight: 4 }} />
-                      <Text className="text-[11px] font-black text-[#F7C400]">Reorder</Text>
+                      <Ionicons name="repeat" size={14} color="#F7C400" style={{ marginRight: 5 }} />
+                      <Text className="text-xs font-black text-[#F7C400]">Reorder</Text>
                     </TouchableOpacity>
                   </View>
                 </View>

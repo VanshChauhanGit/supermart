@@ -221,7 +221,7 @@ export default function AdminOrdersScreen() {
       {/* Header */}
       <View className="px-5 pt-4 pb-3 flex-row justify-between items-center">
         <View>
-          <Text className="text-3xl font-black text-[#1E3A8A]">Delivery Orders</Text>
+          <Text className="text-4xl tracking-tight font-semibold text-[#1E3A8A]">Delivery Orders</Text>
           <Text className="text-xs text-slate-400 font-semibold mt-0.5">
             {orders.filter(o => o.status === 'PENDING').length} pending · Pull down to refresh
           </Text>

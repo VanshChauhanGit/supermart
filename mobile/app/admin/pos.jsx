@@ -257,7 +257,7 @@ export default function AdminPOSScreen() {
 
     const itemsText = sale.items.map(i => `• ${i.name} x${i.quantity} = ₹${i.total || i.price * i.quantity}`).join('\n');
 
-    const msg = `🧾 *SUPERMART RETAIL INVOICE*
+    const msg = `🧾 *MANDHAUR SUPERMART RETAIL INVOICE*
 ----------------------------------
 Invoice: *#${sale.invoiceNo}*
 Date: ${dateStr}
@@ -269,7 +269,7 @@ ${itemsText}
 Subtotal: ₹${sale.subtotal}
 ${sale.discount > 0 ? `Discount: -₹${sale.discount}\n` : ''}*GRAND TOTAL: ₹${sale.totalAmount}*
 ----------------------------------
-Thank you for shopping at Supermart! Visit again.`;
+Thank you for shopping at Mandhaur Supermart! Visit again.`;
 
     const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
     const url = cleanPhone
@@ -700,7 +700,7 @@ Thank you for shopping at Supermart! Visit again.`;
 
             {/* Thermal Receipt Summary Card */}
             <View className="bg-slate-50 border border-dashed border-slate-300 rounded-2xl p-4 my-4">
-              <Text className="text-center font-black text-xs text-slate-900 uppercase">SUPERMART CONVENIENCE</Text>
+              <Text className="text-center font-black text-xs text-slate-900 uppercase">MANDHAUR SUPERMART CONVENIENCE</Text>
               <Text className="text-center text-[10px] text-slate-400 mb-2">Market Plaza, Sec-12</Text>
 
               <View className="border-t border-b border-slate-200 py-2 my-1">

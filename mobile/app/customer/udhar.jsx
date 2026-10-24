@@ -137,7 +137,7 @@ export default function CustomerUdharScreen() {
                   </View>
                 )}
 
-                <Text className="text-[11px] text-slate-400 font-medium mt-1">{tx.notes || 'Purchased at Supermart POS Counter'}</Text>
+                <Text className="text-[11px] text-slate-400 font-medium mt-1">{tx.notes || 'Purchased at Mandhaur Supermart POS Counter'}</Text>
               </View>
             );
           })

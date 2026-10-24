@@ -95,7 +95,25 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET product by Barcode or ID
+// GET product by ID (for detail page)
+router.get('/:id', async (req, res) => {
+  try {
+    let product;
+    try {
+      product = await Product.findById(req.params.id);
+    } catch (e) {
+      product = memoryProducts.find(p => p._id === req.params.id);
+    }
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+    res.json({ success: true, data: product });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET product by Barcode
 router.get('/barcode/:barcode', async (req, res) => {
   try {
     let product;
@@ -116,7 +134,10 @@ router.get('/barcode/:barcode', async (req, res) => {
 // POST Add Product
 router.post('/', async (req, res) => {
   try {
-    const { barcode, name, category, subCategory, unit, purchasePrice, mrp, sellingPrice, stockQty, reorderLevel, imageUrl } = req.body;
+    const { barcode, name, category, subCategory, unit, purchasePrice, mrp, sellingPrice, stockQty, reorderLevel, imageUrl, images, description, variants } = req.body;
+
+    const defaultImg = 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80';
+    const resolvedImageUrl = imageUrl || (images && images.length > 0 ? images[0] : defaultImg);
 
     let newProd;
     try {
@@ -131,7 +152,10 @@ router.post('/', async (req, res) => {
         sellingPrice: Number(sellingPrice) || 0,
         stockQty: Number(stockQty) || 0,
         reorderLevel: Number(reorderLevel) || 5,
-        imageUrl: imageUrl || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80'
+        imageUrl: resolvedImageUrl,
+        images: images || [],
+        description: description || '',
+        variants: variants || []
       });
     } catch (e) {
       newProd = {
@@ -146,7 +170,10 @@ router.post('/', async (req, res) => {
         sellingPrice: Number(sellingPrice) || 0,
         stockQty: Number(stockQty) || 0,
         reorderLevel: Number(reorderLevel) || 5,
-        imageUrl: imageUrl || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80',
+        imageUrl: resolvedImageUrl,
+        images: images || [],
+        description: description || '',
+        variants: variants || [],
         createdAt: new Date()
       };
       memoryProducts.unshift(newProd);
@@ -250,4 +277,66 @@ router.patch('/:id/stock', async (req, res) => {
   }
 });
 
+const reduceProductStock = async (productId, variantId, qty) => {
+  try {
+    if (variantId) {
+      await Product.findOneAndUpdate(
+        { _id: productId, 'variants._id': variantId },
+        { $inc: { 'variants.$.stockQty': -qty } }
+      );
+    } else {
+      await Product.findByIdAndUpdate(productId, {
+        $inc: { stockQty: -qty }
+      });
+    }
+  } catch (e) {
+    // Mongo error or CastError
+  }
+
+  // In-memory fallback
+  const idx = memoryProducts.findIndex(p => p._id === productId || String(p.barcode) === String(productId));
+  if (idx !== -1) {
+    if (variantId && memoryProducts[idx].variants) {
+      const vIdx = memoryProducts[idx].variants.findIndex(v => String(v._id) === String(variantId));
+      if (vIdx !== -1) {
+        memoryProducts[idx].variants[vIdx].stockQty = Math.max(0, (memoryProducts[idx].variants[vIdx].stockQty || 0) - qty);
+      }
+    } else {
+      memoryProducts[idx].stockQty = Math.max(0, (memoryProducts[idx].stockQty || 0) - qty);
+    }
+  }
+};
+
+const restoreProductStock = async (productId, variantId, qty) => {
+  try {
+    if (variantId) {
+      await Product.findOneAndUpdate(
+        { _id: productId, 'variants._id': variantId },
+        { $inc: { 'variants.$.stockQty': qty } }
+      );
+    } else {
+      await Product.findByIdAndUpdate(productId, {
+        $inc: { stockQty: qty }
+      });
+    }
+  } catch (e) {
+    // Mongo error or CastError
+  }
+
+  // In-memory fallback
+  const idx = memoryProducts.findIndex(p => p._id === productId || String(p.barcode) === String(productId));
+  if (idx !== -1) {
+    if (variantId && memoryProducts[idx].variants) {
+      const vIdx = memoryProducts[idx].variants.findIndex(v => String(v._id) === String(variantId));
+      if (vIdx !== -1) {
+        memoryProducts[idx].variants[vIdx].stockQty = (memoryProducts[idx].variants[vIdx].stockQty || 0) + qty;
+      }
+    } else {
+      memoryProducts[idx].stockQty = (memoryProducts[idx].stockQty || 0) + qty;
+    }
+  }
+};
+
 module.exports = router;
+module.exports.reduceProductStock = reduceProductStock;
+module.exports.restoreProductStock = restoreProductStock;

@@ -230,8 +230,6 @@ export default function CustomerProfileScreen() {
               flexDirection: 'row',
               alignItems: 'center',
               padding: 12,
-              borderBottomWidth: 1,
-              borderBottomColor: '#F1F5F9',
             }}
           >
             <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: '#E0F2FE', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
@@ -243,112 +241,7 @@ export default function CustomerProfileScreen() {
             </View>
             <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
           </TouchableOpacity>
-
-          {/* Udhar Account */}
-          <TouchableOpacity
-            onPress={() => router.push('/customer/udhar')}
-            activeOpacity={0.7}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              padding: 12,
-            }}
-          >
-            <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
-              <Ionicons name="wallet" size={20} color="#16A34A" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontWeight: '800', color: '#0F172A' }}>Udhar Khata & Credit</Text>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748B', marginTop: 1 }}>Pay later balance & instant ledger</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-          </TouchableOpacity>
         </View>
-
-        {/* ── Settings & Developer Config ── */}
-        {/* <Text style={{ fontSize: 11, fontWeight: '900', color: '#64748B', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8, paddingLeft: 4 }}>
-          Preferences & Backend
-        </Text>
-
-        <TouchableOpacity 
-          onPress={() => setShowServerConfig(!showServerConfig)}
-          activeOpacity={0.8}
-          style={{
-            backgroundColor: '#FFFFFF',
-            borderRadius: 20,
-            padding: 14,
-            borderWidth: 1,
-            borderColor: '#E2E8F0',
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 12,
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-              <Ionicons name="server" size={18} color="#334155" />
-            </View>
-            <View>
-              <Text style={{ fontSize: 13, fontWeight: '800', color: '#0F172A' }}>API Server Endpoint</Text>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748B' }}>Configure Express Backend URL</Text>
-            </View>
-          </View>
-          <Ionicons name={showServerConfig ? "chevron-up" : "chevron-down"} size={18} color="#64748B" />
-        </TouchableOpacity> */}
-
-        {/* {showServerConfig && (
-          <View style={{
-            backgroundColor: '#FFFFFF',
-            borderRadius: 20,
-            padding: 16,
-            borderWidth: 1,
-            borderColor: '#E2E8F0',
-            marginBottom: 16,
-          }}>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 6 }}>
-              Backend REST API Endpoint:
-            </Text>
-            <TextInput
-              style={{
-                backgroundColor: '#F8FAFC',
-                borderWidth: 1,
-                borderColor: '#CBD5E1',
-                borderRadius: 14,
-                paddingHorizontal: 12,
-                paddingVertical: 10,
-                fontSize: 12,
-                fontWeight: '600',
-                color: '#0F172A',
-                marginBottom: 12,
-              }}
-              value={serverUrlInput}
-              onChangeText={setServerUrlInput}
-              autoCapitalize="none"
-              placeholder="http://localhost:5000/api/v1"
-              placeholderTextColor="#94A3B8"
-            />
-            <TouchableOpacity
-              onPress={handleTestServer}
-              disabled={testingServer}
-              style={{
-                backgroundColor: '#1E293B',
-                paddingVertical: 12,
-                borderRadius: 14,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {testingServer ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
-                  📡 Test & Save Connection
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )} */}
 
         {/* ── Logout Button ── */}
         <TouchableOpacity

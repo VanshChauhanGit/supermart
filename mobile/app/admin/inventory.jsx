@@ -22,8 +22,8 @@ export default function AdminInventoryScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [pendingImages, setPendingImages] = useState([]); // [{ id, uri, error }]
   const [categories, setCategories] = useState([]);
-  const [popover, setPopover] = useState({ visible: false, item: null, position: { x: 0, y: 0 }, alignTop: false });
   const [filterLowStockOnly, setFilterLowStockOnly] = useState(false);
   const [scannerVisible, setScannerVisible] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
@@ -74,13 +74,6 @@ export default function AdminInventoryScreen() {
     }),
   []);
 
-  const samplePresets = [
-    { label: 'Atta', url: 'https://images.unsplash.com/photo-1574316071802-0d684efa7bf5?auto=format&fit=crop&w=400&q=80' },
-    { label: 'Milk', url: 'https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&fit=crop&w=400&q=80' },
-    { label: 'Oil', url: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=crop&w=400&q=80' },
-    { label: 'Noodles', url: 'https://images.unsplash.com/photo-1612929633738-8fe44f7ec841?auto=format&fit=crop&w=400&q=80' },
-  ];
-
   const [formData, setFormData] = useState(() => ({
     barcode: '890' + Math.floor(1000000000 + Math.random() * 9000000000),
     name: '',
@@ -90,7 +83,10 @@ export default function AdminInventoryScreen() {
     mrp: '',
     sellingPrice: '',
     stockQty: '',
-    imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80'
+    imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80',
+    images: [],
+    variants: [],
+    description: ''
   }));
 
   const fetchProducts = async () => {
@@ -144,13 +140,18 @@ export default function AdminInventoryScreen() {
       mrp: '',
       sellingPrice: '',
       stockQty: '',
-      imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80'
+      imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80',
+      images: [],
+      variants: [],
+      description: ''
     });
+    setPendingImages([]);
     setShowAddModal(true);
   };
 
   const handleEdit = (item) => {
     setEditingId(item._id);
+    setPendingImages([]);
     setFormData({
       barcode: item.barcode || '',
       name: item.name || '',
@@ -160,7 +161,17 @@ export default function AdminInventoryScreen() {
       mrp: item.mrp ? item.mrp.toString() : '0',
       sellingPrice: item.sellingPrice ? item.sellingPrice.toString() : '0',
       stockQty: item.stockQty ? item.stockQty.toString() : '0',
-      imageUrl: item.imageUrl || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80'
+      imageUrl: item.imageUrl || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80',
+      images: Array.isArray(item.images) ? [...item.images] : [],
+      variants: Array.isArray(item.variants) ? item.variants.map(v => ({
+        _id: v._id,
+        label: v.label || '',
+        mrp: String(v.mrp ?? ''),
+        sellingPrice: String(v.sellingPrice ?? ''),
+        stockQty: String(v.stockQty ?? ''),
+        unitPrice: v.unitPrice || ''
+      })) : [],
+      description: item.description || ''
     });
     setShowAddModal(true);
   };
@@ -209,6 +220,108 @@ export default function AdminInventoryScreen() {
     }
   };
 
+  const uploadAdditionalImageBase64 = async (base64, localUri) => {
+    const tempId = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    
+    // Add to pendingImages right away so the user immediately sees it with a loading indicator
+    setPendingImages(prev => [...prev, { id: tempId, uri: localUri || `data:image/jpeg;base64,${base64}` }]);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/upload/base64`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: `data:image/jpeg;base64,${base64}` }),
+      });
+      const data = await response.json();
+      if (data.success && data.imageUrl) {
+        // Move from pending to actual images list
+        setFormData(prev => ({
+          ...prev,
+          images: [...(prev.images || []), data.imageUrl]
+        }));
+      } else {
+        Alert.alert('Upload Failed', data.message || 'Could not upload image');
+      }
+    } catch (err) {
+      Alert.alert('Upload Error', 'Failed to upload image to server');
+    } finally {
+      // Remove from pendingImages
+      setPendingImages(prev => prev.filter(item => item.id !== tempId));
+    }
+  };
+
+  const takeAdditionalPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Camera permission is required to capture photos.');
+        return;
+      }
+      let result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+        base64: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        // Trigger upload in background without awaiting so user can immediately take/pick more
+        uploadAdditionalImageBase64(asset.base64, asset.uri);
+      }
+    } catch (_error) {
+      Alert.alert('Error', 'Failed to take photo');
+    }
+  };
+
+  const pickAdditionalImageFromGallery = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Gallery permission required to upload images.');
+        return;
+      }
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        selectionLimit: 5,
+        quality: 0.7,
+        base64: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        // Upload all selected images concurrently
+        result.assets.forEach(asset => {
+          if (asset.base64) {
+            uploadAdditionalImageBase64(asset.base64, asset.uri);
+          }
+        });
+      }
+    } catch (_error) {
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
+
+  const pickAdditionalImage = () => {
+    Alert.alert(
+      'Add Additional Image',
+      'Choose an option to add an extra product photo:',
+      [
+        {
+          text: 'Take Photo (Camera)',
+          onPress: takeAdditionalPhoto,
+        },
+        {
+          text: 'Choose from Gallery',
+          onPress: pickAdditionalImageFromGallery,
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
+    );
+  };
+
   const uploadImage = async (base64String) => {
     setUploading(true);
     try {
@@ -233,6 +346,10 @@ export default function AdminInventoryScreen() {
   };
 
   const handleSave = async () => {
+    if (pendingImages.length > 0) {
+      Alert.alert('Uploading In Progress', 'Please wait a moment for the additional images to finish uploading.');
+      return;
+    }
     if (!formData.name.trim()) {
       Alert.alert('Required', 'Please enter product name');
       return;
@@ -249,10 +366,22 @@ export default function AdminInventoryScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          purchasePrice: Number(formData.purchasePrice),
-          mrp: Number(formData.mrp),
-          sellingPrice: Number(formData.sellingPrice),
-          stockQty: Number(formData.stockQty)
+          purchasePrice: Number(formData.purchasePrice) || 0,
+          mrp: Number(formData.mrp) || Number(formData.sellingPrice) || 0,
+          sellingPrice: Number(formData.sellingPrice) || 0,
+          stockQty: Number(formData.stockQty) || 0,
+          images: Array.isArray(formData.images) ? formData.images.filter(Boolean) : [],
+          variants: (formData.variants || [])
+            .filter(v => v.label && v.label.trim())
+            .map(v => ({
+              ...(v._id ? { _id: v._id } : {}),
+              label: v.label.trim(),
+              mrp: Number(v.mrp) || Number(v.sellingPrice) || 0,
+              sellingPrice: Number(v.sellingPrice) || 0,
+              stockQty: Number(v.stockQty) || 0,
+              unitPrice: v.unitPrice || ''
+            })),
+          description: formData.description || ''
         })
       });
       const data = await res.json();
@@ -308,28 +437,10 @@ export default function AdminInventoryScreen() {
           </View>
         </View>
       </View>
-      <View className="items-end justify-between ml-1.5">
-        <View className="flex-row items-center bg-slate-100 rounded-xl p-0.5 border border-slate-200">
-          <TouchableOpacity
-            onPress={() => handleAdjustStock(item, -1)}
-            className="w-7 h-7 rounded-lg bg-white items-center justify-center shadow-xs"
-          >
-            <Ionicons name="remove" size={14} color="#1E3A8A" />
-          </TouchableOpacity>
-          <Text className="px-2 text-xs font-black text-slate-800">{item.stockQty}</Text>
-          <TouchableOpacity
-            onPress={() => handleAdjustStock(item, 1)}
-            className="w-7 h-7 rounded-lg bg-white items-center justify-center shadow-xs"
-          >
-            <Ionicons name="add" size={14} color="#1E3A8A" />
-          </TouchableOpacity>
+      <View className="items-center justify-center pl-2 pr-1">
+        <View className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center border border-slate-200">
+          <Ionicons name="pencil" size={13} color="#1E3A8A" />
         </View>
-        <TouchableOpacity
-          onPress={() => handleAdjustStock(item, 5)}
-          className="bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 mt-1.5"
-        >
-          <Text className="text-[10px] font-black text-[#1E3A8A]">+5 Add</Text>
-        </TouchableOpacity>
       </View>
     </>
   );
@@ -424,41 +535,11 @@ export default function AdminInventoryScreen() {
         )}
         renderItem={({ item }) => {
           const isLow = item.stockQty <= (item.reorderLevel || 5);
-          let itemRef = null;
-          let lastPress = 0;
-
-          const showOptions = () => {
-            if (itemRef) {
-              itemRef.measure((x, y, width, height, pageX, pageY) => {
-                const windowHeight = Dimensions.get('window').height;
-                const alignTop = pageY > windowHeight / 2;
-                setPopover({
-                  visible: true,
-                  item,
-                  position: { x: pageX, y: pageY, width, height },
-                  alignTop
-                });
-              });
-            }
-          };
-
-          const handlePress = () => {
-            const time = new Date().getTime();
-            const delta = time - lastPress;
-            const DOUBLE_PRESS_DELAY = 300; // ms
-            if (delta < DOUBLE_PRESS_DELAY) {
-              showOptions();
-            }
-            lastPress = time;
-          };
-
           return (
             <TouchableOpacity
-              ref={ref => { itemRef = ref; }}
               activeOpacity={0.7}
-              onPress={handlePress}
-              onLongPress={showOptions}
-              className={`bg-white rounded-xl p-2 mb-2 flex-row items-center ${isLow ? 'border border-red-200' : 'border border-slate-300'}`}
+              onPress={() => handleEdit(item)}
+              className={`bg-white rounded-xl p-2.5 mb-2 flex-row items-center ${isLow ? 'border border-red-200' : 'border border-slate-300'}`}
             >
               {renderProductItemContent(item, isLow)}
             </TouchableOpacity>
@@ -519,15 +600,7 @@ export default function AdminInventoryScreen() {
                       <Ionicons name="images" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
                       <Text className="text-white text-[11px] font-black tracking-wide">Gallery</Text>
                     </TouchableOpacity>
-                    {samplePresets.map((p, i) => (
-                      <TouchableOpacity
-                        key={i}
-                        onPress={() => setFormData({ ...formData, imageUrl: p.url })}
-                        className="bg-slate-200 rounded-lg px-2.5 py-1.5 mr-2 mb-1.5"
-                      >
-                        <Text className="text-[11px] font-black text-slate-700 tracking-wide">{p.label}</Text>
-                      </TouchableOpacity>
-                    ))}
+                    
                   </View>
                 </View>
               </View>
@@ -628,15 +701,244 @@ export default function AdminInventoryScreen() {
                   <View pointerEvents="none" className="absolute top-2 left-4 z-10">
                     <Text className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Stock Qty</Text>
                   </View>
-                  <TextInput
-                    className="px-4 pt-6 pb-2 text-md font-semibold text-[#1E3A8A]"
-                    value={formData.stockQty}
-                    onChangeText={(val) => setFormData({ ...formData, stockQty: val })}
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor="#94A3B8"
-                  />
+                  <View className="flex-row items-center px-4 pt-6 pb-2">
+                    <TextInput
+                      className="flex-1 text-md font-semibold text-[#1E3A8A]"
+                      value={String(formData.stockQty ?? '')}
+                      onChangeText={(val) => setFormData({ ...formData, stockQty: val })}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor="#94A3B8"
+                    />
+                    <View className="flex-row items-center gap-1">
+                      <TouchableOpacity
+                        onPress={() => setFormData(prev => ({ ...prev, stockQty: String(Math.max(0, (parseInt(prev.stockQty, 10) || 0) - 1)) }))}
+                        className="w-6 h-6 rounded-md bg-white border border-slate-200 items-center justify-center shadow-xs"
+                      >
+                        <Ionicons name="remove" size={12} color="#1E3A8A" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => setFormData(prev => ({ ...prev, stockQty: String((parseInt(prev.stockQty, 10) || 0) + 1) }))}
+                        className="w-6 h-6 rounded-md bg-white border border-slate-200 items-center justify-center shadow-xs"
+                      >
+                        <Ionicons name="add" size={12} color="#1E3A8A" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => setFormData(prev => ({ ...prev, stockQty: String((parseInt(prev.stockQty, 10) || 0) + 5) }))}
+                        className="px-1.5 h-6 rounded-md bg-blue-50 border border-blue-200 items-center justify-center shadow-xs"
+                      >
+                        <Text className="text-[10px] font-bold text-[#1E3A8A]">+5</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
+              </View>
+
+              {/* Product Description */}
+              <View className="relative bg-slate-50 border border-slate-200 rounded-2xl mb-5">
+                <View pointerEvents="none" className="absolute top-2 left-4 z-10">
+                  <Text className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Product Description</Text>
+                </View>
+                <TextInput
+                  className="px-4 pt-6 pb-3 text-sm text-[#1E3A8A]"
+                  value={formData.description}
+                  onChangeText={(val) => setFormData({ ...formData, description: val })}
+                  placeholder="e.g. Pure and natural chakki fresh atta made from golden wheat."
+                  placeholderTextColor="#94A3B8"
+                  multiline
+                  numberOfLines={2}
+                />
+              </View>
+
+              {/* Additional Product Images */}
+              <View className="mb-6">
+                <View className="flex-row items-center justify-between mb-2">
+                  <View className="flex-row items-center">
+                    <Text className="text-sm font-bold text-slate-400 uppercase tracking-widest">
+                      Additional Images ({(formData.images?.length || 0) + (pendingImages.length || 0)})
+                    </Text>
+                    {pendingImages.length > 0 && (
+                      <View className="ml-2 flex-row items-center bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                        <ActivityIndicator size={10} color="#D97706" style={{ marginRight: 4 }} />
+                        <Text className="text-[10px] font-bold text-amber-700">Uploading {pendingImages.length}...</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View className="flex-row items-center space-x-2">
+                    <TouchableOpacity
+                      onPress={takeAdditionalPhoto}
+                      className="flex-row items-center bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200 mr-1.5 active:bg-blue-100"
+                    >
+                      <Ionicons name="camera" size={13} color="#1E3A8A" />
+                      <Text className="text-[11px] font-bold text-[#1E3A8A] ml-1">Camera</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={pickAdditionalImageFromGallery}
+                      className="flex-row items-center bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200 active:bg-slate-200"
+                    >
+                      <Ionicons name="images" size={13} color="#334155" />
+                      <Text className="text-[11px] font-bold text-slate-700 ml-1">Gallery</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {(formData.images && formData.images.length > 0) || (pendingImages && pendingImages.length > 0) ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row py-1">
+                    {/* Already uploaded images */}
+                    {formData.images?.map((imgUri, idx) => (
+                      <View key={`uploaded_${idx}`} className="relative mr-3 w-16 h-16 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                        <Image source={{ uri: imgUri }} className="w-full h-full" resizeMode="cover" />
+                        <TouchableOpacity
+                          onPress={() => {
+                            setFormData(prev => ({
+                              ...prev,
+                              images: prev.images.filter((_, i) => i !== idx)
+                            }));
+                          }}
+                          className="absolute top-0.5 right-0.5 bg-black/60 w-4.5 h-4.5 rounded-full items-center justify-center"
+                        >
+                          <Ionicons name="close" size={12} color="#FFF" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+
+                    {/* Currently uploading images with loading overlay */}
+                    {pendingImages.map((pending) => (
+                      <View key={pending.id} className="relative mr-3 w-16 h-16 rounded-xl overflow-hidden border border-blue-300 bg-slate-100">
+                        <Image source={{ uri: pending.uri }} className="w-full h-full opacity-60" resizeMode="cover" />
+                        <View className="absolute inset-0 bg-black/30 items-center justify-center">
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                          <Text className="text-[8px] font-bold text-white mt-1">Uploading</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <Text className="text-xs text-slate-400 italic">No additional images added yet. Click Camera or Gallery to upload.</Text>
+                )}
+              </View>
+
+              {/* Product Options / Variants (e.g. 500g, 1kg) */}
+              <View className="mb-6">
+                <View className="flex-row items-center justify-between mb-2">
+                  <View>
+                    <Text className="text-sm font-bold text-slate-400 uppercase tracking-widest">
+                      Options / Sizes ({formData.variants?.length || 0})
+                    </Text>
+                    <Text className="text-[10px] text-slate-400">e.g. 1 kg, 500 g with custom prices & stock</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setFormData(prev => ({
+                        ...prev,
+                        variants: [
+                          ...(prev.variants || []),
+                          { label: '', mrp: '', sellingPrice: '', stockQty: '10', unitPrice: '' }
+                        ]
+                      }));
+                    }}
+                    className="flex-row items-center bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200"
+                  >
+                    <Ionicons name="add" size={14} color="#1E3A8A" />
+                    <Text className="text-[11px] font-bold text-[#1E3A8A] ml-1">+ Add Option</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {formData.variants && formData.variants.length > 0 ? (
+                  formData.variants.map((variant, vIdx) => (
+                    <View key={vIdx} className="bg-slate-50 border border-slate-200 rounded-2xl p-3 mb-2.5">
+                      <View className="flex-row items-center justify-between mb-2">
+                        <Text className="text-xs font-bold text-slate-700">Option #{vIdx + 1}</Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setFormData(prev => ({
+                              ...prev,
+                              variants: prev.variants.filter((_, i) => i !== vIdx)
+                            }));
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Variant Label */}
+                      <TextInput
+                        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 mb-2"
+                        placeholder="Option label (e.g. 1 kg, 500 g, 2 x 1 L)"
+                        placeholderTextColor="#94A3B8"
+                        value={variant.label}
+                        onChangeText={(t) => {
+                          const updated = [...formData.variants];
+                          updated[vIdx].label = t;
+                          setFormData({ ...formData, variants: updated });
+                        }}
+                      />
+
+                      <View className="flex-row gap-2 mb-2">
+                        <View className="flex-1">
+                          <Text className="text-[9px] font-bold text-slate-400 mb-1">Selling Price (₹)</Text>
+                          <TextInput
+                            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900"
+                            placeholder="0"
+                            placeholderTextColor="#94A3B8"
+                            keyboardType="numeric"
+                            value={variant.sellingPrice}
+                            onChangeText={(t) => {
+                              const updated = [...formData.variants];
+                              updated[vIdx].sellingPrice = t;
+                              setFormData({ ...formData, variants: updated });
+                            }}
+                          />
+                        </View>
+                        <View className="flex-1">
+                          <Text className="text-[9px] font-bold text-slate-400 mb-1">MRP (₹)</Text>
+                          <TextInput
+                            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900"
+                            placeholder="0"
+                            placeholderTextColor="#94A3B8"
+                            keyboardType="numeric"
+                            value={variant.mrp}
+                            onChangeText={(t) => {
+                              const updated = [...formData.variants];
+                              updated[vIdx].mrp = t;
+                              setFormData({ ...formData, variants: updated });
+                            }}
+                          />
+                        </View>
+                        <View className="flex-1">
+                          <Text className="text-[9px] font-bold text-slate-400 mb-1">Stock Qty</Text>
+                          <TextInput
+                            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900"
+                            placeholder="0"
+                            placeholderTextColor="#94A3B8"
+                            keyboardType="numeric"
+                            value={variant.stockQty}
+                            onChangeText={(t) => {
+                              const updated = [...formData.variants];
+                              updated[vIdx].stockQty = t;
+                              setFormData({ ...formData, variants: updated });
+                            }}
+                          />
+                        </View>
+                      </View>
+
+                      {/* Unit Price (Optional, e.g. ₹19.7/100 ml) */}
+                      <TextInput
+                        className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] text-slate-700"
+                        placeholder="Unit price hint (optional, e.g. ₹19.7/100 ml)"
+                        placeholderTextColor="#94A3B8"
+                        value={variant.unitPrice}
+                        onChangeText={(t) => {
+                          const updated = [...formData.variants];
+                          updated[vIdx].unitPrice = t;
+                          setFormData({ ...formData, variants: updated });
+                        }}
+                      />
+                    </View>
+                  ))
+                ) : (
+                  <Text className="text-xs text-slate-400 italic">No variants yet. Base price and stock above will be used.</Text>
+                )}
               </View>
 
               {/* Actions */}
@@ -655,89 +957,25 @@ export default function AdminInventoryScreen() {
                 </TouchableOpacity>
               </View>
 
+              {editingId && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowAddModal(false);
+                    handleDelete(editingId);
+                  }}
+                  className="mt-3 py-2 items-center flex-row justify-center"
+                >
+                  <Ionicons name="trash-outline" size={15} color="#EF4444" style={{ marginRight: 6 }} />
+                  <Text className="text-red-500 font-bold text-xs">Delete Product</Text>
+                </TouchableOpacity>
+              )}
+
             </ScrollView>
           </View>
           </BlurView>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Popover Modal */}
-      {popover.visible && popover.item && (
-        <Modal transparent animationType="fade" visible={popover.visible} onRequestClose={() => setPopover({ visible: false, item: null, position: { x: 0, y: 0 }, alignTop: false })}>
-          <TouchableWithoutFeedback onPress={() => setPopover({ visible: false, item: null, position: { x: 0, y: 0 }, alignTop: false })}>
-            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' }}>
-
-              {/* Highlighted item clone */}
-              <View
-                style={{
-                  position: 'absolute',
-                  top: popover.position.y,
-                  left: popover.position.x,
-                  width: popover.position.width,
-                  height: popover.position.height,
-                  backgroundColor: 'white',
-                  borderRadius: 12,
-                  padding: 8,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  borderColor: popover.item.stockQty <= (popover.item.reorderLevel || 5) ? '#fecaca' : '#cbd5e1',
-                  borderWidth: 1,
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 10,
-                  elevation: 6
-                }}
-              >
-                {renderProductItemContent(popover.item, popover.item.stockQty <= (popover.item.reorderLevel || 5))}
-              </View>
-
-              <TouchableWithoutFeedback>
-                <View
-                  style={{
-                    position: 'absolute',
-                    top: popover.alignTop ? undefined : popover.position.y + popover.position.height + 8,
-                    bottom: popover.alignTop ? Dimensions.get('window').height - popover.position.y + 8 : undefined,
-                    right: 20,
-                    backgroundColor: 'white',
-                    borderRadius: 12,
-                    padding: 4,
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.15,
-                    shadowRadius: 12,
-                    elevation: 5,
-                    minWidth: 140
-                  }}
-                >
-                  <TouchableOpacity
-                    className="flex-row items-center px-4 py-3 border-b border-slate-100"
-                    onPress={() => {
-                      const item = popover.item;
-                      setPopover({ visible: false, item: null, position: { x: 0, y: 0 }, alignTop: false });
-                      handleEdit(item);
-                    }}
-                  >
-                    <Ionicons name="pencil" size={16} color="#64748B" style={{ marginRight: 12 }} />
-                    <Text className="text-sm font-bold text-slate-700">Edit Product</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    className="flex-row items-center px-4 py-3"
-                    onPress={() => {
-                      const id = popover.item._id;
-                      setPopover({ visible: false, item: null, position: { x: 0, y: 0 }, alignTop: false });
-                      handleDelete(id);
-                    }}
-                  >
-                    <Ionicons name="trash" size={16} color="#EF4444" style={{ marginRight: 12 }} />
-                    <Text className="text-sm font-bold text-red-500">Delete Product</Text>
-                  </TouchableOpacity>
-                </View>
-              </TouchableWithoutFeedback>
-            </View>
-          </TouchableWithoutFeedback>
-        </Modal>
-      )}
 
       {/* Barcode Camera Scanner Modal */}
       <Modal visible={scannerVisible} animationType="slide">

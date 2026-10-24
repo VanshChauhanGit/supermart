@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity,
+  View, Text, TextInput, TouchableOpacity, Image,
   ActivityIndicator, StatusBar, ScrollView, Keyboard,
   KeyboardAvoidingView, Platform, TouchableWithoutFeedback
 } from 'react-native';
@@ -71,7 +71,7 @@ export default function UnifiedAuthScreen() {
         <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
         <ActivityIndicator size="large" color="#F7C400" />
         <Text className="mt-3 text-[#64748B] font-bold text-xs">
-          Opening Supermart...
+          Opening Mandhaur Supermart...
         </Text>
       </SafeAreaView>
     );
@@ -224,13 +224,16 @@ export default function UnifiedAuthScreen() {
               <View>
             {/* ── Brand Header ── */}
             <View className="items-center mt-2 mb-5">
-              {/* Yellow Glowing Logo Badge */}
-              <View className="w-16 h-16 rounded-full bg-[#F7C400] items-center justify-center mb-3 shadow-md shadow-[#F7C400]/40">
-                <Ionicons name="flash-sharp" size={32} color="#111827" />
-              </View>
+              {/* Official App Logo */}
+              <Image
+                source={require('../assets/images/icon.png')}
+                style={{ width: 84, height: 84, borderRadius: 22 }}
+                className="mb-3 shadow-md shadow-[#F7C400]/40"
+                resizeMode="cover"
+              />
 
               <Text className="text-2xl font-black text-[#0F172A] tracking-tight">
-                SUPERMART
+                MANDHAUR SUPERMART
               </Text>
 
               <View className="flex-row items-center bg-[#FEF3C7] px-3 py-1 rounded-xl mt-1.5 border border-[#FDE68A] gap-1">
@@ -511,7 +514,7 @@ export default function UnifiedAuthScreen() {
               {/* ── Footer ── */}
               <View className="items-center py-2">
                 <Text className="text-[11px] text-[#94A3B8] font-semibold">
-                  Supermart POS & Delivery System © 2026
+                  Mandhaur Supermart POS & Delivery System © 2026
                 </Text>
               </View>
             </View>

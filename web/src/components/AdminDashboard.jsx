@@ -5,6 +5,7 @@ import {
   AlertCircle, ChevronRight, RefreshCw, Wallet, TrendingUp,
   CreditCard, Banknote, QrCode, ArrowUpRight, ShoppingBag
 } from 'lucide-react';
+import { io } from 'socket.io-client';
 
 const StatCard = ({ icon: Icon, label, value, valueColor = 'text-slate-900', iconBg, iconColor, onClick }) => (
   <div
@@ -111,6 +112,26 @@ export default function AdminDashboard({ products = [], customers = [], onRefres
 
   useEffect(() => {
     fetchDashboardData();
+
+    const SOCKET_URL = window.location.origin;
+    const socket = io(SOCKET_URL, { path: '/socket.io' });
+
+    const handleRealtimeUpdate = () => {
+      fetchDashboardData();
+    };
+
+    socket.on('orderStatusUpdate', handleRealtimeUpdate);
+    socket.on('revenueUpdated', handleRealtimeUpdate);
+    socket.on('salesSummaryUpdated', handleRealtimeUpdate);
+    socket.on('newOrder', handleRealtimeUpdate);
+
+    return () => {
+      socket.off('orderStatusUpdate', handleRealtimeUpdate);
+      socket.off('revenueUpdated', handleRealtimeUpdate);
+      socket.off('salesSummaryUpdated', handleRealtimeUpdate);
+      socket.off('newOrder', handleRealtimeUpdate);
+      socket.disconnect();
+    };
   }, []);
 
   const handleRefresh = async () => {

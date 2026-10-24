@@ -2,11 +2,14 @@ const mongoose = require('mongoose');
 
 const orderItemSchema = new mongoose.Schema({
   productId: String,
+  variantId: { type: String, default: null },
+  variantLabel: { type: String, default: '' },
   name: String,
   price: Number,
   quantity: Number,
   unit: String,
-  total: Number
+  total: Number,
+  imageUrl: { type: String, default: '' }
 });
 
 const onlineOrderSchema = new mongoose.Schema({
@@ -27,6 +30,7 @@ const onlineOrderSchema = new mongoose.Schema({
     enum: ['PENDING', 'ACCEPTED', 'PACKING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'],
     default: 'PENDING'
   },
+  stockDeducted: { type: Boolean, default: false },
   assignedDeliveryRider: { type: String, default: 'Unassigned' },
   riderPhone: { type: String, default: '' },
   deliveryBoyId: { type: String, default: null },

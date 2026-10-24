@@ -49,7 +49,7 @@ const ActionRow = ({ icon, iconBg, iconColor, title, subtitle, onPress, badge })
 );
 
 export default function AdminDashboardScreen() {
-  const { apiBaseUrl } = useApp();
+  const { apiBaseUrl, socket } = useApp();
 
   const [salesTimeframe, setSalesTimeframe] = useState('TODAY'); // TODAY | WEEK | MONTH
 
@@ -74,7 +74,7 @@ export default function AdminDashboardScreen() {
         fetch(`${apiBaseUrl}/sales/summary`).catch(() => null),
         fetch(`${apiBaseUrl}/products`).catch(() => null),
         fetch(`${apiBaseUrl}/customers`).catch(() => null),
-        fetch(`${apiBaseUrl}/orders`).catch(() => null),
+        fetch(`${apiBaseUrl}/orders`).catch(() => null)
       ]);
 
       const salesData = salesRes ? await salesRes.json() : null;
@@ -110,7 +110,25 @@ export default function AdminDashboardScreen() {
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+
+    if (socket) {
+      const handleRealtimeUpdate = () => {
+        fetchDashboardData();
+      };
+
+      socket.on('orderStatusUpdate', handleRealtimeUpdate);
+      socket.on('revenueUpdated', handleRealtimeUpdate);
+      socket.on('salesSummaryUpdated', handleRealtimeUpdate);
+      socket.on('newOrder', handleRealtimeUpdate);
+
+      return () => {
+        socket.off('orderStatusUpdate', handleRealtimeUpdate);
+        socket.off('revenueUpdated', handleRealtimeUpdate);
+        socket.off('salesSummaryUpdated', handleRealtimeUpdate);
+        socket.off('newOrder', handleRealtimeUpdate);
+      };
+    }
+  }, [socket]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -275,13 +293,13 @@ export default function AdminDashboardScreen() {
             onPress={() => router.push('/admin/orders')}
           />
           <StatCard
-            icon="book-outline"
-            iconColor="#D97706"
-            label="Udhar Pending"
-            value={`₹${stats.totalUdhar.toLocaleString('en-IN')}`}
-            valueColor="text-amber-600"
-            iconBg="bg-amber-50"
-            onPress={() => router.push('/admin/udhar')}
+            icon="receipt-outline"
+            iconColor="#10B981"
+            label="Today's Orders"
+            value={`${stats.todayOrders} Billed`}
+            valueColor="text-emerald-600"
+            iconBg="bg-emerald-50"
+            onPress={() => router.push('/admin/pos')}
           />
         </View>
 
@@ -311,14 +329,6 @@ export default function AdminDashboardScreen() {
           title="Fulfill Delivery Orders"
           subtitle="Accept, call customer & map route dispatch"
           onPress={() => router.push('/admin/orders')}
-        />
-        <ActionRow
-          icon="book-outline"
-          iconColor="#D97706"
-          iconBg="bg-amber-50"
-          title="Udhar Khata (Digital Ledger)"
-          subtitle="Customer passbook history & WhatsApp reminders"
-          onPress={() => router.push('/admin/udhar')}
         />
         <ActionRow
           icon="pricetag-outline"

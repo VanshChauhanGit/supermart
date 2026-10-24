@@ -7,10 +7,13 @@ yarn-error.log
 uploads/
 public/uploads/
 
-# Environment Variables
+# Environment Variables & Secrets
 .env
 .env.*
 !.env.example
+config/*service-account*.json
+*service-account*.json
+firebase-service-account.json
 
 # OS / IDE
 .DS_Store

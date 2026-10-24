@@ -1,5 +1,30 @@
 const initialProducts = [
   {
+    barcode: '8901030009999',
+    name: 'RAW Pressery Almond Beverage Plain (Unsweetened) | Lactose Free | Vegan Drink',
+    category: 'Snacks & Drinks',
+    subCategory: 'Dairy-Free Milk',
+    unit: 'ltr',
+    purchasePrice: 150,
+    mrp: 289,
+    sellingPrice: 197,
+    stockQty: 3,
+    reorderLevel: 2,
+    imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80',
+    images: [
+      'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1528750997573-59b89d56f4f7?auto=format&fit=crop&w=600&q=80'
+    ],
+    description: 'Plant-based dairy-free unsweetened almond beverage. Lactose free, plant protein, zero cholesterol and zero sugar.',
+    variants: [
+      { label: '1 ltr', mrp: 289, sellingPrice: 197, stockQty: 2, unitPrice: '₹19.7/100 ml' },
+      { label: '2 x 1 ltr', mrp: 578, sellingPrice: 377, stockQty: 1, unitPrice: '₹18.9/100 ml' },
+      { label: '3 x 1 ltr', mrp: 867, sellingPrice: 539, stockQty: 0, unitPrice: '₹18/100 ml' }
+    ],
+    isAvailableForOnline: true
+  },
+  {
     barcode: '8901030001011',
     name: 'Aashirvaad Shuddh Chakki Atta 5kg',
     category: 'Grocery & Atta',
@@ -11,6 +36,16 @@ const initialProducts = [
     stockQty: 45,
     reorderLevel: 10,
     imageUrl: 'https://images.unsplash.com/photo-1574316071802-0d684efa7bf5?auto=format&fit=crop&w=400&q=80',
+    images: [
+      'https://images.unsplash.com/photo-1574316071802-0d684efa7bf5?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=600&q=80'
+    ],
+    description: '100% pure whole wheat grain flour ground with chakki processing for soft and fluffy rotis.',
+    variants: [
+      { label: '1 kg', mrp: 65, sellingPrice: 58, stockQty: 20, unitPrice: '₹5.8/100 g' },
+      { label: '5 kg', mrp: 260, sellingPrice: 235, stockQty: 45, unitPrice: '₹4.7/100 g' },
+      { label: '10 kg', mrp: 510, sellingPrice: 450, stockQty: 0, unitPrice: '₹4.5/100 g' }
+    ],
     isAvailableForOnline: true
   },
   {
@@ -25,6 +60,10 @@ const initialProducts = [
     stockQty: 30,
     reorderLevel: 8,
     imageUrl: 'https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&fit=crop&w=400&q=80',
+    images: [
+      'https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&fit=crop&w=600&q=80'
+    ],
+    description: 'Fresh homogenised toned milk rich in calcium and vitamins.',
     isAvailableForOnline: true
   },
   {
@@ -148,7 +187,7 @@ const initialProducts = [
     purchasePrice: 72,
     mrp: 90,
     sellingPrice: 85,
-    stockQty: 15,
+    stockQty: 0,
     reorderLevel: 4,
     imageUrl: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&w=400&q=80',
     isAvailableForOnline: true

@@ -96,7 +96,7 @@ export default function AdminUdharScreen() {
   const handleWhatsApp = (c) => {
     const cleanPhone = c.phone.replace(/\D/g, '');
     const fatherText = c.fatherName ? ` (S/O ${c.fatherName})` : '';
-    const text = `*SUPERMART Udhar Statement*\n----------------------------------\nCustomer: *${c.name}*${fatherText}\n*Total Pending Udhar Balance: ₹${c.creditBalance}*\nLifetime Spent: ₹${c.totalPurchases || 0}\n----------------------------------\nPlease clear at your convenience via UPI/Cash. Thank you!`;
+    const text = `*MANDHAUR SUPERMART Udhar Statement*\n----------------------------------\nCustomer: *${c.name}*${fatherText}\n*Total Pending Udhar Balance: ₹${c.creditBalance}*\nLifetime Spent: ₹${c.totalPurchases || 0}\n----------------------------------\nPlease clear at your convenience via UPI/Cash. Thank you!`;
     const url = `whatsapp://send?phone=91${cleanPhone}&text=${encodeURIComponent(text)}`;
     Linking.openURL(url).catch(() => Alert.alert('WhatsApp Error', 'Could not launch WhatsApp app.'));
   };
@@ -118,7 +118,7 @@ export default function AdminUdharScreen() {
       txLog = '• No recent ledger transactions recorded.';
     }
 
-    const statementMsg = `📖 *SUPERMART - DIGITAL KHATA PASSBOOK*
+    const statementMsg = `📖 *MANDHAUR SUPERMART - DIGITAL KHATA PASSBOOK*
 ----------------------------------
 Customer: *${customer.name}*${fatherText}
 Mobile: +91-${customer.phone}

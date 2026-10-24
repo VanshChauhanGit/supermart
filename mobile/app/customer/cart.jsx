@@ -72,7 +72,7 @@ export default function CustomerCartScreen() {
         if (isManual) {
           Alert.alert(
             'Location Permission Needed',
-            'Please allow Supermart to access your device location to pin your doorstep for 10-minute delivery.'
+            'Please allow Mandhaur Supermart to access your device location to pin your doorstep for 10-minute delivery.'
           );
         }
         setIsLocating(false);
@@ -228,11 +228,14 @@ export default function CustomerCartScreen() {
         },
         items: cart.map(i => ({
           productId: i._id,
-          name: i.name,
+          variantId: i.variantId || null,
+          variantLabel: i.variantLabel || '',
+          name: i.variantLabel ? `${i.name} (${i.variantLabel})` : i.name,
           price: i.sellingPrice,
           quantity: i.quantity,
-          unit: i.unit,
-          total: i.sellingPrice * i.quantity
+          unit: i.variantLabel || i.unit,
+          total: i.sellingPrice * i.quantity,
+          imageUrl: i.imageUrl || i.image || ''
         })),
         subtotal,
         deliveryFee: currentDeliveryFee,
@@ -473,7 +476,7 @@ export default function CustomerCartScreen() {
 
               return (
                 <View
-                  key={item._id}
+                  key={item.cartItemId || item._id}
                   className={`flex-row items-center py-3 ${index !== cart.length - 1 ? 'border-b border-slate-100' : ''}`}
                 >
                   {/* Thumbnail Image */}
@@ -496,7 +499,7 @@ export default function CustomerCartScreen() {
                     <View className="flex-row items-center mt-0.5">
                       <View className="bg-slate-100 px-1.5 py-0.5 rounded-md mr-1.5">
                         <Text className="text-[9px] font-bold text-slate-600">
-                          {item.unit || '1 pc'}
+                          {item.variantLabel || item.unit || '1 pc'}
                         </Text>
                       </View>
 
@@ -523,40 +526,61 @@ export default function CustomerCartScreen() {
                   {/* Stepper & Line Total Column */}
                   <View className="items-end">
                     {/* Stepper with Home Screen Theme */}
-                    <View className="flex-row items-center bg-[#F7C400] rounded-xl px-1.5 py-1 border border-[#FACC15] shadow-xs">
-                      <TouchableOpacity
-                        onPress={() => {
-                          triggerHaptic();
-                          updateCartQty(item._id, -1);
-                        }}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        className="px-1.5"
-                      >
-                        {item.quantity === 1 ? (
-                          <Ionicons name="trash-outline" size={13} color="#0F172A" />
-                        ) : (
-                          <Text className="text-slate-900 font-black text-xs leading-none">-</Text>
-                        )}
-                      </TouchableOpacity>
+                    {(() => {
+                      const maxStock = (item.stockQty !== undefined && item.stockQty !== null) ? Number(item.stockQty) : Infinity;
+                      const isMaxStockReached = item.quantity >= maxStock;
 
-                      <Text className="text-slate-900 font-black text-xs px-2">
-                        {item.quantity}
-                      </Text>
+                      return (
+                        <>
+                          <View className="flex-row items-center bg-[#F7C400] rounded-xl px-1.5 py-1 border border-[#FACC15] shadow-xs">
+                            <TouchableOpacity
+                              onPress={() => {
+                                triggerHaptic();
+                                updateCartQty(item.cartItemId || item._id, -1);
+                              }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              className="px-1.5"
+                            >
+                              {item.quantity === 1 ? (
+                                <Ionicons name="trash-outline" size={13} color="#0F172A" />
+                              ) : (
+                                <Text className="text-slate-900 font-black text-xs leading-none">-</Text>
+                              )}
+                            </TouchableOpacity>
 
-                      <TouchableOpacity
-                        onPress={() => {
-                          triggerHaptic();
-                          updateCartQty(item._id, 1);
-                        }}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        className="px-1.5"
-                      >
-                        <Text className="text-slate-900 font-black text-xs leading-none">+</Text>
-                      </TouchableOpacity>
-                    </View>
+                            <Text className="text-slate-900 font-black text-xs px-2">
+                              {item.quantity}
+                            </Text>
+
+                            <TouchableOpacity
+                              disabled={isMaxStockReached}
+                              onPress={() => {
+                                if (isMaxStockReached) {
+                                  triggerHaptic();
+                                  return;
+                                }
+                                triggerHaptic();
+                                updateCartQty(item.cartItemId || item._id, 1, maxStock);
+                              }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              className="px-1.5"
+                              style={{ opacity: isMaxStockReached ? 0.35 : 1 }}
+                            >
+                              <Text className="text-slate-900 font-black text-xs leading-none">+</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {isMaxStockReached && (
+                            <Text className="text-[9px] font-bold text-rose-500 mt-0.5">
+                              Max stock ({maxStock})
+                            </Text>
+                          )}
+                        </>
+                      );
+                    })()}
 
                     {/* Total for item */}
-                    <Text className="text-xs font-black text-slate-900 mt-1.5">
+                    <Text className="text-xs font-black text-slate-900 mt-1">
                       ₹{item.sellingPrice * item.quantity}
                     </Text>
                   </View>
