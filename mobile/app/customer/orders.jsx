@@ -278,12 +278,12 @@ export default function CustomerOrdersScreen() {
     triggerHaptic();
     Alert.alert(
       `Support for Order #${order.orderNo}`,
-      `Need assistance with your delivery?\n\nStore Helpline: +91 98765 43210\nOrder Status: ${order.status.replace(/_/g, ' ')}`,
+      `Need assistance with your delivery?\n\nStore Helpline: +91 8791309361\nOrder Status: ${order.status.replace(/_/g, ' ')}`,
       [
         { text: 'Close', style: 'cancel' },
         {
           text: 'Call Helpline',
-          onPress: () => Linking.openURL('tel:9876543210').catch(() => {})
+          onPress: () => Linking.openURL('tel:8791309361').catch(() => {})
         }
       ]
     );
