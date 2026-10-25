@@ -11,9 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "LSApplicationQueriesSchemes": [
-          "paytm"
-        ]
+        "LSApplicationQueriesSchemes": []
       },
       "bundleIdentifier": "com.vansh1411r.supermart"
     },
@@ -26,7 +24,17 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.supermart.mandhaur"
+      "package": "com.supermart.mandhaur",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "web": {
       "output": "static",
@@ -50,7 +58,6 @@
       "expo-image",
       "expo-status-bar",
       "expo-web-browser",
-      "./withPaytmRepository.js",
       "expo-audio",
       "expo-notifications",
       [
@@ -59,7 +66,8 @@
           "android": {
             "enableProguardInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "-dontwarn com.facebook.react.** -dontwarn com.google.android.gms.**"
+            "extraProguardRules": "-dontwarn com.facebook.react.** -dontwarn com.google.android.gms.**",
+            "enableMinifyInReleaseBuilds": true
           }
         }
       ]
@@ -73,6 +81,12 @@
       "eas": {
         "projectId": "0a2df424-a2d1-4086-8604-972666d394df"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/0a2df424-a2d1-4086-8604-972666d394df"
     }
   }
 }

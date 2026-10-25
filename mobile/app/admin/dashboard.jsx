@@ -164,11 +164,11 @@ export default function AdminDashboardScreen() {
             <Text className="text-3xl font-black text-slate-900 mt-0.5">Admin Portal</Text>
           </View>
           <TouchableOpacity
-            onPress={() => router.push('/admin/pos')}
+            onPress={() => router.push('/admin/inventory')}
             className="bg-[#1E3A8A] rounded-2xl px-3.5 py-2.5 flex-row items-center shadow-md shadow-[#1E3A8A]/30"
           >
-            <Ionicons name="calculator" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text className="text-white text-xs font-black">POS Bill</Text>
+            <Ionicons name="cube" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text className="text-white text-xs font-black">Catalog</Text>
           </TouchableOpacity>
         </View>
 
@@ -293,26 +293,25 @@ export default function AdminDashboardScreen() {
             onPress={() => router.push('/admin/orders')}
           />
           <StatCard
-            icon="receipt-outline"
+            icon="checkmark-done-circle-outline"
             iconColor="#10B981"
-            label="Today's Orders"
-            value={`${stats.todayOrders} Billed`}
+            label="Total Orders"
+            value={`${stats.activeOrders} Active`}
             valueColor="text-emerald-600"
             iconBg="bg-emerald-50"
-            onPress={() => router.push('/admin/pos')}
+            onPress={() => router.push('/admin/orders')}
           />
         </View>
 
         {/* Quick Actions */}
         <Text className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 mt-2">Store Actions</Text>
         <ActionRow
-          icon="calculator-outline"
-          iconColor="#1E3A8A"
-          iconBg="bg-blue-50"
-          title="Quick POS Counter Billing"
-          subtitle="Scan barcodes & bill walk-in customers"
-          onPress={() => router.push('/admin/pos')}
-          badge="Fast POS"
+          icon="people-outline"
+          iconColor="#D97706"
+          iconBg="bg-amber-50"
+          title="Manage Delivery Boys"
+          subtitle="Add, edit, set password & delete delivery fleet"
+          onPress={() => router.push('/admin/delivery-boys')}
         />
         <ActionRow
           icon="cube-outline"

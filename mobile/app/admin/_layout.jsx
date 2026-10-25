@@ -156,16 +156,10 @@ export default function AdminTabsLayout() {
             )
           }}
         />
-        {/* Tab 2: Quick POS Counter Billing */}
+        {/* POS / Billing - Hidden for now */}
         <Tabs.Screen
           name="pos"
-          options={{
-            title: "Quick POS",
-            tabBarLabel: "Billing",
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons name={focused ? "calculator" : "calculator-outline"} size={22} color={color} />
-            )
-          }}
+          options={{ href: null }}
         />
         {/* Tab 3: Catalog */}
         <Tabs.Screen
@@ -209,6 +203,7 @@ export default function AdminTabsLayout() {
         <Tabs.Screen name="login" options={{ href: null }} />
         <Tabs.Screen name="categories" options={{ href: null, title: 'Manage Categories' }} />
         <Tabs.Screen name="offers" options={{ href: null, title: 'Manage Offers' }} />
+        <Tabs.Screen name="delivery-boys" options={{ href: null, title: 'Manage Delivery Boys' }} />
       </Tabs>
     </>
   );

@@ -1,17 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const Offer = require('../models/Offer');
+const Setting = require('../models/Setting');
 
 let memoryOffers = [];
 
 // Apply offer logic
-const calculateDiscount = (offer, subtotal) => {
+const calculateDiscount = (offer, subtotal, baseDeliveryFee = 30) => {
   if (subtotal < offer.minOrderValue) {
     return { success: false, message: `Minimum order value of ₹${offer.minOrderValue} required.` };
   }
 
   let discount = 0;
-  let deliveryFee = 40; // Base delivery fee, ideally fetched from settings
+  let deliveryFee = baseDeliveryFee;
 
   if (offer.discountType === 'FLAT') {
     discount = offer.discountValue;
@@ -124,7 +125,13 @@ router.post('/apply', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid or expired promo code.' });
     }
 
-    const result = calculateDiscount(offer, Number(subtotal));
+    let baseFee = 30;
+    try {
+      const s = await Setting.findOne();
+      if (s && s.deliveryFee !== undefined) baseFee = Number(s.deliveryFee);
+    } catch (e) {}
+
+    const result = calculateDiscount(offer, Number(subtotal), baseFee);
     if (!result.success) {
       return res.status(400).json({ success: false, message: result.message });
     }

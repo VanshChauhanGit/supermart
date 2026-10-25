@@ -63,6 +63,13 @@ export default function StoreProfile({ adminUser, onLogout }) {
   const [savingSettings, setSavingSettings] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  const [deliverySettings, setDeliverySettings] = useState({
+    deliveryFee: 30,
+    freeDeliveryThreshold: 300
+  });
+  const [savingDelivery, setSavingDelivery] = useState(false);
+  const [deliverySuccess, setDeliverySuccess] = useState(false);
+
   const fetchHealth = async () => {
     try {
       const res = await fetch('/api/health');
@@ -73,8 +80,24 @@ export default function StoreProfile({ adminUser, onLogout }) {
     }
   };
 
+  const fetchDeliverySettings = async () => {
+    try {
+      const res = await fetch('/api/v1/settings');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setDeliverySettings({
+          deliveryFee: Number(data.data.deliveryFee ?? 30),
+          freeDeliveryThreshold: Number(data.data.freeDeliveryThreshold ?? 300)
+        });
+      }
+    } catch (e) {
+      console.warn('Could not fetch delivery settings', e);
+    }
+  };
+
   useEffect(() => {
     fetchHealth();
+    fetchDeliverySettings();
   }, []);
 
   const handleNotificationToggle = () => {
@@ -92,6 +115,30 @@ export default function StoreProfile({ adminUser, onLogout }) {
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     }, 500);
+  };
+
+  const handleSaveDeliverySettings = async (e) => {
+    e.preventDefault();
+    setSavingDelivery(true);
+    try {
+      const res = await fetch('/api/v1/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deliveryFee: Number(deliverySettings.deliveryFee),
+          freeDeliveryThreshold: Number(deliverySettings.freeDeliveryThreshold)
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDeliverySuccess(true);
+        setTimeout(() => setDeliverySuccess(false), 3000);
+      }
+    } catch (e) {
+      alert('Error updating delivery settings: ' + e.message);
+    } finally {
+      setSavingDelivery(false);
+    }
   };
 
   return (
@@ -260,6 +307,126 @@ export default function StoreProfile({ adminUser, onLogout }) {
             >
               <Save size={16} />
               <span>{savingSettings ? 'Saving...' : 'Save Store Details'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Dynamic Delivery Charges & Threshold Form */}
+      <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
+        <div className="flex justify-between items-center pb-4 border-b border-slate-100 mb-5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <Truck size={20} />
+            </div>
+            <div>
+              <h4 className="text-base font-black text-slate-900">Delivery Charges & Free Delivery</h4>
+              <p className="text-xs text-slate-400">Dynamically update base delivery fees and qualifying thresholds for customers</p>
+            </div>
+          </div>
+
+          {deliverySuccess && (
+            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5 animate-in fade-in">
+              <CheckCircle size={14} /> Settings updated
+            </span>
+          )}
+        </div>
+
+        {/* Live Preview Strip */}
+        <div className={`p-4 rounded-xl mb-5 flex items-center gap-3 border ${Number(deliverySettings.deliveryFee) === 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-blue-50 border-blue-200 text-[#1E3A8A]'}`}>
+          <div className="text-xl">🛵</div>
+          <div className="text-xs">
+            <span className="font-bold">Live Status: </span>
+            {Number(deliverySettings.deliveryFee) === 0 ? (
+              <span>All customer orders qualify for <strong>FREE Delivery (₹0 fee)</strong></span>
+            ) : (
+              <span>
+                Orders below <strong>₹{deliverySettings.freeDeliveryThreshold}</strong> pay <strong>₹{deliverySettings.deliveryFee}</strong> delivery fee. 
+                Orders <strong>₹{deliverySettings.freeDeliveryThreshold}+</strong> receive <strong>FREE Express Delivery</strong>.
+              </span>
+            )}
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveDeliverySettings} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Base Delivery Fee (₹)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-slate-400">₹</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={deliverySettings.deliveryFee}
+                  onChange={(e) => setDeliverySettings({ ...deliverySettings, deliveryFee: e.target.value })}
+                  className="input-field pl-8 font-bold"
+                  required
+                />
+              </div>
+              <div className="flex items-center gap-1.5 mt-2">
+                <span className="text-[10px] text-slate-400 font-semibold">Presets:</span>
+                {['0', '20', '30', '40', '50'].map(val => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setDeliverySettings({ ...deliverySettings, deliveryFee: val })}
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border transition-colors ${
+                      String(deliverySettings.deliveryFee) === val
+                        ? 'bg-[#1E3A8A] text-white border-[#1E3A8A]'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {val === '0' ? 'Free (₹0)' : `₹${val}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Free Delivery Minimum Order (₹)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-slate-400">₹</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={deliverySettings.freeDeliveryThreshold}
+                  onChange={(e) => setDeliverySettings({ ...deliverySettings, freeDeliveryThreshold: e.target.value })}
+                  className="input-field pl-8 font-bold"
+                  required
+                />
+              </div>
+              <div className="flex items-center gap-1.5 mt-2">
+                <span className="text-[10px] text-slate-400 font-semibold">Presets:</span>
+                {['199', '299', '499', '999'].map(val => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setDeliverySettings({ ...deliverySettings, freeDeliveryThreshold: val })}
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border transition-colors ${
+                      String(deliverySettings.freeDeliveryThreshold) === val
+                        ? 'bg-[#1E3A8A] text-white border-[#1E3A8A]'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    ₹{val}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-2 flex justify-end">
+            <button
+              type="submit"
+              disabled={savingDelivery}
+              className="btn btn-primary text-xs font-bold py-2.5 px-5 rounded-xl shadow-md flex items-center gap-2"
+            >
+              <Save size={16} />
+              <span>{savingDelivery ? 'Saving...' : 'Save Delivery Settings'}</span>
             </button>
           </div>
         </form>

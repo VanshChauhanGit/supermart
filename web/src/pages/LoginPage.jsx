@@ -6,8 +6,8 @@ import {
 } from 'lucide-react';
 
 export default function LoginPage({ onLoginSuccess }) {
-  const [identifier, setIdentifier] = useState('admin');
-  const [password, setPassword] = useState('supermart123');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -104,19 +104,6 @@ export default function LoginPage({ onLoginSuccess }) {
               <span>{errorMsg}</span>
             </div>
           )}
-
-          {/* Quick Credential Hint Card */}
-          <div className="bg-slate-50 border border-dashed border-slate-200 p-3 rounded-xl text-xs text-slate-600">
-            <div className="font-bold text-slate-800 flex items-center gap-1.5 mb-1">
-              <KeyRound size={14} className="text-[#1E3A8A]" />
-              <span>Owner Default Credentials:</span>
-            </div>
-            <div className="text-[11px] text-slate-500">
-              Username: <code className="font-bold text-[#1E3A8A] bg-white px-1.5 py-0.5 rounded border border-slate-200">admin</code>
-              {' '}&bull;{' '}
-              Password: <code className="font-bold text-[#1E3A8A] bg-white px-1.5 py-0.5 rounded border border-slate-200">supermart123</code>
-            </div>
-          </div>
 
           {/* Username / Mobile Field */}
           <div>

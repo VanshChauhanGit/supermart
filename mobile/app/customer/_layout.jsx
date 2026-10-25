@@ -73,10 +73,11 @@ function FloatingTabBar({ state, navigation }) {
                 style={{
                   alignItems: 'center',
                   justifyContent: 'center',
-                  minWidth: 70,
-                  height: 52,
-                  paddingHorizontal: 14,
-                  borderRadius: 50,
+                  width: '92%',
+                  maxWidth: 70,
+                  height: 50,
+                  borderRadius: 25,
+                  overflow: 'hidden',
                   backgroundColor: focused ? '#EAEAEA' : 'transparent',
                 }}
               >

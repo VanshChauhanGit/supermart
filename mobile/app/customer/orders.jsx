@@ -12,7 +12,7 @@ import {
   Image
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../../context/AppContext';
@@ -163,13 +163,17 @@ export default function CustomerOrdersScreen() {
   }, [apiBaseUrl]);
 
   const fetchLiveOrders = useCallback(async (isManual = false) => {
-    if (!customerUser?.phone) {
+    const rawPhone = customerUser?.phone || customerUser?.mobile;
+    if (!rawPhone) {
       setLoading(false);
       return;
     }
     if (isManual) setSyncing(true);
     try {
-      const cleanPhone = customerUser.phone.replace(/\D/g, '');
+      let cleanPhone = String(rawPhone).replace(/\D/g, '');
+      if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
+        cleanPhone = cleanPhone.slice(2);
+      }
       const res = await fetch(`${apiBaseUrl}/orders/customer/${cleanPhone}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
@@ -182,6 +186,14 @@ export default function CustomerOrdersScreen() {
       setLoading(false);
     }
   }, [customerUser, apiBaseUrl]);
+
+  // Refetch live orders automatically whenever screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      fetchLiveOrders();
+      fetchCatalogMap();
+    }, [fetchLiveOrders, fetchCatalogMap])
+  );
 
   // Initial fetch and real-time socket events
   useEffect(() => {

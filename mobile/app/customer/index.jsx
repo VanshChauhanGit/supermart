@@ -575,7 +575,7 @@ export default function CustomerHomeScreen() {
 
       {/* ── 3. Visual "Shop by Category" Grid ───────────────────── */}
       {selectedTab === 'ALL' && !searchTerm && dbCategories.length > 0 && (
-        <View className="mx-4 mb-5">
+        <View className="mx-4 mb-1.5">
           <View className="flex-row justify-between items-center mb-3">
             <View>
               <Text className="text-xl font-bold text-slate-900 tracking-tight">
@@ -584,7 +584,7 @@ export default function CustomerHomeScreen() {
             </View>
           </View>
 
-          <View className="flex-row flex-wrap justify-between">
+          <View className="flex-row flex-wrap -mx-1.5">
             {dbCategories.map(cat => {
               const meta = getCategoryMeta(cat.name);
               const resolvedImage = (cat.imageUrl && !cat.imageUrl.includes('placeholder'))
@@ -599,7 +599,7 @@ export default function CustomerHomeScreen() {
                     setSelectedTab(cat.name);
                   }}
                   activeOpacity={0.8}
-                  className="w-[23%] mb-3.5 items-center"
+                  className="w-1/4 px-1.5 mb-3.5 items-center"
                 >
                   <View
                     className="w-full aspect-square rounded-xl items-center justify-center border border-slate-200/80 shadow-xs overflow-hidden mb-1.5"
@@ -631,159 +631,28 @@ export default function CustomerHomeScreen() {
         </View>
       )}
 
-      {/* ── 4. Horizontal Quick-Picks Shelf (Only on ALL tab) ─────── */}
-      {selectedTab === 'ALL' && !searchTerm && bestSellers.length > 0 && (
-        <View className="mb-5">
-          <View className="flex-row justify-between items-center px-4 mb-2.5">
-            <View className="flex-row items-center">
-              <Text className="text-lg font-bold text-slate-900 mr-1.5">
-                Trending Quick-Picks
-              </Text>
-              <View className="bg-[#EF4444] px-1.5 py-0.5 rounded">
-                <Text className="text-white text-[9px] font-black">HOT</Text>
-              </View>
-            </View>
-            <Text className="text-[11px] font-bold text-slate-500">Swipe →</Text>
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16 }}
-          >
-            {bestSellers.map(item => {
-              const qty = getItemQtyInCart(item._id);
-              const discount = item.mrp > item.sellingPrice
-                ? Math.round(((item.mrp - item.sellingPrice) / item.mrp) * 100)
-                : 0;
-
-              const isItemOutOfStock = (item.stockQty !== undefined && item.stockQty !== null && item.stockQty <= 0) &&
-                (!item.variants || item.variants.length === 0 || item.variants.every(v => v.stockQty <= 0));
-
-              return (
-                <View
-                  key={`shelf_${item._id}`}
-                  style={{ opacity: isItemOutOfStock ? 0.6 : 1 }}
-                  className="w-[125px] mr-3.5 justify-between"
-                >
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    onPress={() => setSelectedProductForDetail(item)}
-                  >
-                    <View className="w-full aspect-[4/5] bg-slate-100 rounded-2xl overflow-hidden mb-2 relative">
-                      <Image
-                        source={{ uri: item.imageUrl || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80' }}
-                        className="w-full h-full"
-                        resizeMode="cover"
-                      />
-                      {discount > 0 && !isItemOutOfStock && (
-                        <View className="absolute top-1.5 left-1.5 bg-[#16A34A] px-1.5 py-0.5 rounded-md shadow-xs">
-                          <Text className="text-white text-[9px] font-black">{discount}% OFF</Text>
-                        </View>
-                      )}
-
-                      {/* Out of Stock Overlay */}
-                      {isItemOutOfStock && (
-                        <View className="absolute inset-0 bg-slate-950/45 items-center justify-center p-1">
-                          <View className="bg-rose-600 px-1.5 py-0.5 rounded">
-                            <Text className="text-white text-[8px] font-black uppercase tracking-wider">Out of Stock</Text>
-                          </View>
-                        </View>
-                      )}
-                    </View>
-
-                    <Text numberOfLines={1} className="text-[12px] font-black text-slate-900">
-                      {item.name}
-                    </Text>
-                    <Text className="text-[10px] font-semibold text-slate-400 mt-0.5">
-                      {item.unit || '1 pc'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <View className="flex-row justify-between items-center mt-2">
-                    <Text className="text-[13px] font-black text-slate-900">
-                      ₹{item.sellingPrice}
-                    </Text>
-
-                    {isItemOutOfStock ? (
-                      <View className="bg-slate-100 px-1.5 py-1 rounded-lg border border-slate-200">
-                        <Text className="text-slate-400 text-[9px] font-bold">Unavailable</Text>
-                      </View>
-                    ) : qty === 0 ? (
-                      <TouchableOpacity
-                        onPress={() => {
-                          if (item.stockQty <= 0) return;
-                          triggerHaptic();
-                          addToCart(item);
-                        }}
-                        className="bg-white px-2 py-1 rounded-lg border border-[#F7C400] shadow-xs active:bg-amber-50"
-                      >
-                        <Text className="text-[#D97706] text-[10px] font-black">+ ADD</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <View className="flex-row items-center bg-[#F7C400] rounded-lg px-1 py-0.5 border border-[#FACC15]">
-                        <TouchableOpacity onPress={() => { triggerHaptic(); updateCartQty(item._id, -1); }}>
-                          <Text className="text-slate-900 font-black text-[11px] px-1">-</Text>
-                        </TouchableOpacity>
-                        <Text className="text-slate-900 font-black text-[11px] px-1">{qty}</Text>
-                        <TouchableOpacity
-                          disabled={item.stockQty !== undefined && item.stockQty !== null && qty >= item.stockQty}
-                          onPress={() => {
-                            if (item.stockQty !== undefined && item.stockQty !== null && qty >= item.stockQty) {
-                              triggerHaptic();
-                              return;
-                            }
-                            triggerHaptic();
-                            updateCartQty(item._id, 1, item.stockQty);
-                          }}
-                          style={{ opacity: (item.stockQty !== undefined && item.stockQty !== null && qty >= item.stockQty) ? 0.4 : 1 }}
-                        >
-                          <Text className="text-slate-900 font-black text-[11px] px-1">+</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* ── 5. Main Grid Section Header ─────────────────────────── */}
-      {/* <View className="mx-4 mb-3.5 flex-row justify-between items-center">
+      {/* ── 4. Main Products Grid Section Heading ──────────────────── */}
+      <View className="mx-4 mb-2 flex-row justify-between items-center">
         <View>
           <Text className="text-xl font-bold text-slate-900 tracking-tight">
-            {searchTerm ? `Results for "${searchTerm}"` : selectedTab === 'ALL' ? 'Explore All Products' : selectedTab}
+            {searchTerm ? `Results for "${searchTerm}"` : (selectedTab === 'ALL' ? 'All Products' : selectedTab)}
           </Text>
-          {selectedTab === 'ALL' && !searchTerm && (
-            <Text className="text-xs font-medium text-slate-500 mt-0.5">
-              Best prices & freshest picks for your home
-            </Text>
-          )}
-        </View>
-
-        <View className="bg-slate-100 px-2.5 py-1 rounded-full">
-          <Text className="text-xs font-bold text-slate-600">
-            {filtered.length} {filtered.length === 1 ? 'item' : 'items'}
+          <Text className="text-xs font-semibold text-slate-500 mt-0.5">
+            {filtered.length} {filtered.length === 1 ? 'item' : 'items'} available
           </Text>
         </View>
-      </View> */}
-
-      {/* Filter Active Breadcrumb */}
-      {/* {selectedTab !== 'ALL' && (
-        <View className="mx-4 mb-3 flex-row items-center">
+        {selectedTab !== 'ALL' && (
           <TouchableOpacity
-            onPress={() => setSelectedTab('ALL')}
-            className="flex-row items-center bg-slate-100 px-2.5 py-1 rounded-full"
+            onPress={() => {
+              triggerHaptic();
+              setSelectedTab('ALL');
+            }}
+            className="bg-slate-100 px-3 py-1 rounded-full border border-slate-200"
           >
-            <Text className="text-[11px] font-extrabold text-slate-600 mr-1">
-              Showing: {selectedTab}
-            </Text>
-            <Ionicons name="close-circle" size={14} color="#64748B" />
+            <Text className="text-xs font-bold text-slate-700">View All</Text>
           </TouchableOpacity>
-        </View>
-      )} */}
+        )}
+      </View>
     </View>
   );
 
@@ -791,9 +660,6 @@ export default function CustomerHomeScreen() {
     <SafeAreaView edges={[]} className="flex-1 bg-white">
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-      {/* ══════════════════════════════════════════════════════
-          PREMIUM STICKY HEADER (Tailwind / NativeWind)
-          ══════════════════════════════════════════════════════ */}
       <View
         onLayout={(e) => {
           const { height } = e.nativeEvent.layout;
@@ -804,38 +670,6 @@ export default function CustomerHomeScreen() {
         className="absolute top-0 left-0 right-0 z-50 bg-white/95 border-b border-slate-200/70 shadow-xs"
         style={{ paddingTop: insets.top }}
       >
-        {/* ── Row 1: Delivery Location & Fast Arrival Pill ── */}
-        {/* <View className="flex-row items-center justify-between px-4 pt-2 pb-1.5">
-          <View className="flex-1 mr-3">
-            <View className="flex-row items-center">
-              <View className="bg-[#FEF08A] px-2 py-0.5 rounded-md flex-row items-center mr-1.5">
-                <Ionicons name="flash" size={11} color="#854D0E" />
-                <Text className="text-[10px] font-black text-[#854D0E] ml-0.5">10 MINS</Text>
-              </View>
-              <Text className="text-xs font-black text-slate-900">
-                Delivery to <Text className="text-amber-600">Home</Text>
-              </Text>
-              <Ionicons name="chevron-down" size={13} color="#64748B" style={{ marginLeft: 3 }} />
-            </View>
-            <Text
-              numberOfLines={1}
-              className="text-[11px] font-medium text-slate-500 mt-0.5"
-            >
-              {customerUser?.name ? `${customerUser.name} • ` : ''}Sector 62, Noida
-            </Text>
-          </View>
-
-
-          <TouchableOpacity
-            onPress={() => router.push('/customer/profile')}
-            activeOpacity={0.8}
-            className="w-[38px] h-[38px] rounded-full bg-[#FEF3C7] border-[1.5px] border-[#FACC15] items-center justify-center"
-          >
-            <Text className="text-[15px] font-black text-[#92400E]">
-              {customerUser?.name ? customerUser.name.charAt(0).toUpperCase() : '👤'}
-            </Text>
-          </TouchableOpacity>
-        </View> */}
 
         {/* ── Row 2: Search Bar with Clear & Voice Indicator ── */}
         <View className="mx-4 my-1.5 flex-row items-center bg-[#F8FAFC] rounded-2xl border border-slate-200 px-3.5 h-[46px]">
@@ -943,7 +777,7 @@ export default function CustomerHomeScreen() {
         keyboardDismissMode="on-drag"
         numColumns={3}
         columnWrapperStyle={{ gap: PRODUCT_GRID_GAP, paddingHorizontal: PRODUCT_GRID_PADDING }}
-        contentContainerStyle={{ paddingBottom: cartTotalCount > 0 ? 190 : 130 }}
+        contentContainerStyle={{ paddingBottom: cartTotalCount > 0 ? 110 : 70 }}
         ListHeaderComponent={renderListHeader()}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
@@ -953,14 +787,14 @@ export default function CustomerHomeScreen() {
         removeClippedSubviews={Platform.OS === 'android'}
         ListFooterComponent={
           hasMoreProducts ? (
-            <View className="py-6 items-center justify-center">
+            <View className="py-2.5 items-center justify-center">
               <ActivityIndicator size="small" color="#F7C400" />
-              <Text className="text-[11px] font-bold text-slate-400 mt-2">
+              <Text className="text-[11px] font-bold text-slate-400 mt-1">
                 Loading more items...
               </Text>
             </View>
           ) : filtered.length > INITIAL_PAGE_SIZE ? (
-            <View className="py-6 items-center justify-center">
+            <View className="py-2.5 items-center justify-center">
               <Text className="text-[11px] font-semibold text-slate-400">
                 ✓ You&apos;ve seen all {filtered.length} products
               </Text>

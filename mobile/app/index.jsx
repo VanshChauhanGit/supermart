@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Image,
   ActivityIndicator, StatusBar, ScrollView, Keyboard,
-  KeyboardAvoidingView, Platform, TouchableWithoutFeedback
+  KeyboardAvoidingView, Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -11,6 +11,7 @@ import { useApp } from '../context/AppContext';
 
 export default function UnifiedAuthScreen() {
   const router = useRouter();
+  const scrollViewRef = useRef(null);
   const {
     adminUser, customerUser, deliveryUser, loginAdmin, loginCustomer, loginDelivery,
     apiBaseUrl, setApiBaseUrl, isAuthLoaded
@@ -21,6 +22,7 @@ export default function UnifiedAuthScreen() {
 
   // Active Focused Input state for border highlights
   const [focusedField, setFocusedField] = useState(null);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
   // Shared Form State (Empty by default)
   const [name, setName] = useState('');
@@ -40,6 +42,27 @@ export default function UnifiedAuthScreen() {
   const switchMode = (mode) => {
     setAuthMode(mode);
     clearError();
+  };
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const scrollToField = (yOffset) => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({ y: yOffset, animated: true });
+    }, 120);
   };
 
   // Strictly sanitize mobile input: numbers only, max 10 digits & auto-dismiss keyboard on 10 digits
@@ -210,42 +233,48 @@ export default function UnifiedAuthScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
       >
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          className="px-5 pt-3 pb-6"
+          ref={scrollViewRef}
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingBottom: isKeyboardVisible ? 280 : 32,
+            justifyContent: isKeyboardVisible ? 'flex-start' : 'space-between',
+          }}
+          className="px-5 pt-3"
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
+          keyboardDismissMode="interactive"
         >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-            <View style={{ flexGrow: 1, justifyContent: 'space-between' }}>
-              <View>
+          <View>
             {/* ── Brand Header ── */}
-            <View className="items-center mt-2 mb-5">
+            <View className={`items-center ${isKeyboardVisible ? 'mt-1 mb-2.5' : 'mt-2 mb-5'}`}>
               {/* Official App Logo */}
               <Image
                 source={require('../assets/images/icon.png')}
-                style={{ width: 84, height: 84, borderRadius: 22 }}
-                className="mb-3 shadow-md shadow-[#F7C400]/40"
+                style={isKeyboardVisible ? { width: 44, height: 44, borderRadius: 12 } : { width: 84, height: 84, borderRadius: 22 }}
+                className={`${isKeyboardVisible ? 'mb-1.5' : 'mb-3'} shadow-md shadow-[#F7C400]/40`}
                 resizeMode="cover"
               />
 
-              <Text className="text-2xl font-black text-[#0F172A] tracking-tight">
+              <Text className={`${isKeyboardVisible ? 'text-lg' : 'text-2xl'} font-black text-[#0F172A] tracking-tight`}>
                 MANDHAUR SUPERMART
               </Text>
 
-              <View className="flex-row items-center bg-[#FEF3C7] px-3 py-1 rounded-xl mt-1.5 border border-[#FDE68A] gap-1">
-                <Ionicons name="flash" size={11} color="#D97706" />
-                <Text className="text-[10px] font-extrabold text-[#D97706] tracking-wider uppercase">
-                  10-MIN EXPRESS DELIVERY • KIRYANA STORE
-                </Text>
-              </View>
+              {!isKeyboardVisible && (
+                <View className="flex-row items-center bg-[#FEF3C7] px-3 py-1 rounded-xl mt-1.5 border border-[#FDE68A] gap-1">
+                  <Ionicons name="flash" size={11} color="#D97706" />
+                  <Text className="text-[10px] font-extrabold text-[#D97706] tracking-wider uppercase">
+                    10-MIN EXPRESS DELIVERY • KIRYANA STORE
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* ── Primary Auth Mode Switcher: LOGIN | REGISTER ── */}
-            <View className="bg-[#F1F5F9] p-1 rounded-2xl flex-row mb-5">
+            <View className="bg-[#F1F5F9] p-1 rounded-2xl flex-row mb-4">
               {/* LOGIN TAB (Default) */}
               <TouchableOpacity
                 onPress={() => switchMode('LOGIN')}
@@ -279,7 +308,7 @@ export default function UnifiedAuthScreen() {
                   ══════════════════════════════════════════════════════════ */}
               {authMode === 'LOGIN' ? (
                 <View>
-                  <View className="items-center mb-5">
+                  <View className="items-center mb-4">
                     <Text className="text-lg font-black text-[#0F172A] tracking-tight">
                       Welcome Back
                     </Text>
@@ -299,7 +328,7 @@ export default function UnifiedAuthScreen() {
                         className="flex-1 h-full text-md font-semibold text-[#0F172A] py-0"
                         value={phone}
                         onChangeText={handlePhoneChange}
-                        onFocus={() => setFocusedField('phone')}
+                        onFocus={() => { setFocusedField('phone'); scrollToField(120); }}
                         onBlur={() => setFocusedField(null)}
                         keyboardType="phone-pad"
                         maxLength={10}
@@ -320,7 +349,7 @@ export default function UnifiedAuthScreen() {
                         className="flex-1 h-full text-md font-semibold text-[#0F172A] py-0"
                         value={password}
                         onChangeText={(t) => { setPassword(t); clearError(); }}
-                        onFocus={() => setFocusedField('password')}
+                        onFocus={() => { setFocusedField('password'); scrollToField(180); }}
                         onBlur={() => setFocusedField(null)}
                         secureTextEntry={!showPassword}
                         autoCapitalize="none"
@@ -332,31 +361,6 @@ export default function UnifiedAuthScreen() {
                         <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#64748B" />
                       </TouchableOpacity>
                     </View>
-                  </View>
-
-                  {/* Quick Demo Pre-fill Shortcuts */}
-                  <View className="flex-row justify-end gap-2 mb-5">
-                    <TouchableOpacity
-                      onPress={() => { setPhone('9389401218'); setPassword('Asdf@1234'); clearError(); Keyboard.dismiss(); }}
-                      activeOpacity={0.75}
-                      className="bg-[#FFFBEB] px-3 py-1.5 rounded-lg border border-[#FCD34D] flex-row items-center gap-1"
-                    >
-                      <Ionicons name="bag-handle-outline" size={12} color="#B45309" />
-                      <Text className="text-[11px] font-extrabold text-[#B45309]">
-                        Customer Demo
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => { setPhone('9999999999'); setPassword('supermart123'); clearError(); Keyboard.dismiss(); }}
-                      activeOpacity={0.75}
-                      className="bg-[#FFFBEB] px-3 py-1.5 rounded-lg border border-[#FCD34D] flex-row items-center gap-1"
-                    >
-                      <Ionicons name="shield-checkmark-outline" size={12} color="#B45309" />
-                      <Text className="text-[11px] font-extrabold text-[#B45309]">
-                        Admin Demo
-                      </Text>
-                    </TouchableOpacity>
                   </View>
 
                   {/* ── Inline Error Banner ── */}
@@ -399,7 +403,7 @@ export default function UnifiedAuthScreen() {
                     VIEW 2: REGISTER (Customer Registration Only)
                     ══════════════════════════════════════════════════════════ */
                 <View>
-                  <View className="items-center mb-5">
+                  <View className="items-center mb-4">
                     <Text className="text-lg font-black text-[#0F172A] tracking-tight">
                       Create Account
                     </Text>
@@ -419,7 +423,7 @@ export default function UnifiedAuthScreen() {
                         className="flex-1 h-full text-md font-semibold text-[#0F172A] py-0"
                         value={name}
                         onChangeText={(t) => { setName(t); clearError(); }}
-                        onFocus={() => setFocusedField('name')}
+                        onFocus={() => { setFocusedField('name'); scrollToField(120); }}
                         onBlur={() => setFocusedField(null)}
                         placeholder="e.g. Vansh Chauhan"
                         placeholderTextColor="#94A3B8"
@@ -438,7 +442,7 @@ export default function UnifiedAuthScreen() {
                         className="flex-1 h-full text-md font-semibold text-[#0F172A] py-0"
                         value={phone}
                         onChangeText={handlePhoneChange}
-                        onFocus={() => setFocusedField('regPhone')}
+                        onFocus={() => { setFocusedField('regPhone'); scrollToField(180); }}
                         onBlur={() => setFocusedField(null)}
                         keyboardType="phone-pad"
                         maxLength={10}
@@ -459,7 +463,7 @@ export default function UnifiedAuthScreen() {
                         className="flex-1 h-full text-md font-semibold text-[#0F172A] py-0"
                         value={password}
                         onChangeText={(t) => { setPassword(t); clearError(); }}
-                        onFocus={() => setFocusedField('regPass')}
+                        onFocus={() => { setFocusedField('regPass'); scrollToField(260); }}
                         onBlur={() => setFocusedField(null)}
                         secureTextEntry={!showPassword}
                         autoCapitalize="none"
@@ -511,14 +515,14 @@ export default function UnifiedAuthScreen() {
             </View>
           </View>
 
-              {/* ── Footer ── */}
-              <View className="items-center py-2">
-                <Text className="text-[11px] text-[#94A3B8] font-semibold">
-                  Mandhaur Supermart POS & Delivery System © 2026
-                </Text>
-              </View>
+          {/* ── Footer ── */}
+          {!isKeyboardVisible && (
+            <View className="items-center py-2">
+              <Text className="text-[11px] text-[#94A3B8] font-semibold">
+                Mandhaur Supermart Delivery System
+              </Text>
             </View>
-          </TouchableWithoutFeedback>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

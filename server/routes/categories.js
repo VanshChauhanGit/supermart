@@ -45,13 +45,37 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { name, imageUrl, isActive, sortOrder } = req.body;
+    const cleanName = (name || '').trim();
+    if (!cleanName) {
+      return res.status(400).json({ success: false, message: 'Category name is required' });
+    }
+
     let newCat;
     try {
-      newCat = await Category.create({ name, imageUrl, isActive, sortOrder });
+      newCat = await Category.create({
+        name: cleanName,
+        imageUrl: imageUrl || '',
+        isActive: isActive !== undefined ? Boolean(isActive) : true,
+        sortOrder: Number(sortOrder) || 1
+      });
     } catch (e) {
-      newCat = { _id: 'cat_' + Date.now(), name, imageUrl, isActive, sortOrder, createdAt: new Date() };
+      newCat = {
+        _id: 'cat_' + Date.now(),
+        name: cleanName,
+        imageUrl: imageUrl || '',
+        isActive: isActive !== undefined ? Boolean(isActive) : true,
+        sortOrder: Number(sortOrder) || 1,
+        createdAt: new Date()
+      };
       memoryCategories.push(newCat);
     }
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('categories:updated', { action: 'create', category: newCat });
+      io.emit('categoryCreated', newCat);
+    }
+
     res.status(201).json({ success: true, message: 'Category created', data: newCat });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -72,6 +96,12 @@ router.put('/:id', async (req, res) => {
         updated = memoryCategories[idx];
       }
     }
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('categories:updated', { action: 'update', category: updated });
+    }
+
     res.json({ success: true, message: 'Category updated', data: updated });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -87,6 +117,12 @@ router.delete('/:id', async (req, res) => {
     } catch (e) {
       memoryCategories = memoryCategories.filter(c => c._id !== id);
     }
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('categories:updated', { action: 'delete', id });
+    }
+
     res.json({ success: true, message: 'Category deleted' });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });

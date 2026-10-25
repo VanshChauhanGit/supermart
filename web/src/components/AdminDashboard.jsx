@@ -320,15 +320,6 @@ export default function AdminDashboard({ products = [], customers = [], onRefres
         <div className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3">Store Actions</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           <ActionRow
-            icon={Calculator}
-            iconColor="text-[#1E3A8A]"
-            iconBg="bg-blue-50"
-            title="Quick POS Counter Billing"
-            subtitle="Scan barcodes, calculate tax & bill walk-in customers"
-            onClick={() => navigate('/pos')}
-            badge="Fast POS"
-          />
-          <ActionRow
             icon={Package}
             iconColor="text-[#1E3A8A]"
             iconBg="bg-blue-50"

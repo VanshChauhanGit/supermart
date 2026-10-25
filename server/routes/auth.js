@@ -7,11 +7,14 @@ const Customer = require('../models/Customer');
 const OnlineOrder = require('../models/OnlineOrder');
 const { generateToken, protect } = require('../middleware/auth');
 
-// Helper to sanitize user object (strip password)
+// Helper to sanitize user object (strip password and ensure phone/mobile are aligned)
 const sanitizeUser = (user) => {
   if (!user) return null;
   const userObj = user.toObject ? user.toObject() : { ...user };
   delete userObj.password;
+  const phoneNumber = userObj.phone || userObj.mobile || '';
+  userObj.phone = phoneNumber;
+  userObj.mobile = phoneNumber;
   return userObj;
 };
 
@@ -143,11 +146,18 @@ router.post('/register', async (req, res) => {
               await Customer.create({
                 name: name.trim(),
                 phone: targetMobile,
+                password: hashedPassword,
                 address: targetAddress.trim(),
                 creditLimit: 5000,
                 creditBalance: 0,
                 totalPurchases: 0
               });
+            } else {
+              existingCust.password = hashedPassword;
+              if (!existingCust.name || existingCust.name === 'Walk-in Customer') {
+                existingCust.name = name.trim();
+              }
+              await existingCust.save();
             }
           } catch (custErr) {
             console.warn('[Customer Sync] Notice: Customer ledger sync non-critical:', custErr.message);
@@ -404,84 +414,111 @@ router.post('/login', async (req, res) => {
       } catch (e) {}
     }
 
-    // ── 2. Customer ──────────────────────────────────────────────
+    // ── 2. Check User (Canonical registered account for customers & delivery partners) ──
+    let user = null;
+    let isUserMatch = false;
     try {
-      const customer = await Customer.findOne({ phone: targetMobile });
+      user = await User.findOne({ mobile: targetMobile });
+      if (user) {
+        if (user.comparePassword) {
+          isUserMatch = await user.comparePassword(password);
+        } else if (user.password) {
+          isUserMatch = await bcrypt.compare(password, user.password);
+        }
+      }
+    } catch (e) {}
+
+    // ── 3. Check Customer (Store POS customer records) ──────────────
+    let customer = null;
+    let isCustMatch = false;
+    try {
+      customer = await Customer.findOne({ phone: targetMobile });
       if (customer) {
-        let isMatch = false;
         if (customer.comparePassword) {
-          isMatch = await customer.comparePassword(password);
+          isCustMatch = await customer.comparePassword(password);
         } else if (customer.password) {
-          isMatch = customer.password.startsWith('$2')
+          isCustMatch = customer.password.startsWith('$2')
             ? await bcrypt.compare(password, customer.password)
             : customer.password === password;
         }
-
-        if (!isMatch) {
-          return res.status(401).json({
-            success: false,
-            message: 'Incorrect password. Please try again.'
-          });
-        }
-
-        const customerToken = generateToken({
-          id: customer._id,
-          name: customer.name,
-          phone: customer.phone,
-          role: 'customer'
-        });
-
-        const safeCustomer = customer.toObject ? customer.toObject() : { ...customer };
-        delete safeCustomer.password;
-
-        return res.json({
-          success: true,
-          message: `Welcome back, ${customer.name}!`,
-          token: customerToken,
-          data: { ...safeCustomer, role: 'customer' }
-        });
       }
     } catch (e) {}
 
-    // ── 3. Delivery Partner / User ───────────────────────────────
-    try {
-      const user = await User.findOne({ mobile: targetMobile });
-      if (user) {
-        let isMatch = false;
-        if (user.comparePassword) {
-          isMatch = await user.comparePassword(password);
-        } else {
-          isMatch = await bcrypt.compare(password, user.password);
-        }
+    // Match found in User
+    if (user && isUserMatch) {
+      try {
+        user.lastLogin = new Date();
+        if (user.save) await user.save();
+      } catch (e) {}
 
-        if (!isMatch) {
-          return res.status(401).json({
-            success: false,
-            message: 'Incorrect password. Please try again.'
-          });
-        }
-
+      // Keep Customer ledger password in sync if it exists
+      if (customer && (!customer.password || customer.password !== user.password)) {
         try {
-          user.lastLogin = new Date();
-          if (user.save) await user.save();
+          customer.password = user.password;
+          await customer.save();
         } catch (e) {}
-
-        const token = generateToken({
-          id: user._id,
-          name: user.name,
-          mobile: user.mobile,
-          role: user.role
-        });
-
-        const safeData = sanitizeUser(user);
-        return res.json({
-          success: true,
-          message: `Welcome back, ${user.name}!`,
-          token,
-          data: safeData
-        });
       }
-    } catch (e) {}
+
+      const token = generateToken({
+        id: user._id,
+        name: user.name,
+        mobile: user.mobile,
+        role: user.role
+      });
+
+      const safeData = sanitizeUser(user);
+      return res.json({
+        success: true,
+        message: `Welcome back, ${user.name}!`,
+        token,
+        data: safeData
+      });
+    }
+
+    // Match found in Customer (e.g. from POS / legacy customer)
+    if (customer && isCustMatch) {
+      // Sync to User if missing
+      if (!user) {
+        try {
+          user = await User.create({
+            name: customer.name,
+            mobile: customer.phone,
+            password: customer.password,
+            role: 'customer',
+            deliveryAddress: customer.address || '',
+            lastLogin: new Date()
+          });
+        } catch (e) {}
+      }
+
+      const customerToken = generateToken({
+        id: customer._id,
+        name: customer.name,
+        phone: customer.phone,
+        role: 'customer'
+      });
+
+      const safeCustomer = customer.toObject ? customer.toObject() : { ...customer };
+      delete safeCustomer.password;
+      const custPhone = safeCustomer.phone || safeCustomer.mobile || '';
+      safeCustomer.phone = custPhone;
+      safeCustomer.mobile = custPhone;
+
+      return res.json({
+        success: true,
+        message: `Welcome back, ${customer.name}!`,
+        token: customerToken,
+        data: { ...safeCustomer, role: 'customer' }
+      });
+    }
+
+    // If an account was found in either collection, but the password was incorrect:
+    if (user || customer) {
+      return res.status(401).json({
+        success: false,
+        message: 'Incorrect password. Please try again.'
+      });
+    }
 
     // ── Not found in any collection ──────────────────────────────
     return res.status(404).json({
@@ -800,6 +837,72 @@ router.post('/admin/delivery-boys', async (req, res) => {
       success: true,
       message: `Delivery Partner account for ${newDeliveryBoy.name} created successfully!`,
       data: sanitizeUser(newDeliveryBoy)
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PUT Update Delivery Boy Details (Name, Phone, Password, Vehicle, Active Status)
+router.put('/admin/delivery-boys/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, mobile, phone, password, vehicleType, vehicleNumber, isActive } = req.body;
+
+    const user = await User.findById(id);
+    if (!user || user.role !== 'delivery_partner') {
+      return res.status(404).json({ success: false, message: 'Delivery partner not found.' });
+    }
+
+    if (name && name.trim().length >= 2) {
+      user.name = name.trim();
+    }
+
+    const targetMobile = normalizeMobile(mobile || phone);
+    if (targetMobile && targetMobile.length === 10) {
+      const existing = await User.findOne({ mobile: targetMobile, _id: { $ne: id } });
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          message: `Phone number ${targetMobile} is already in use by another account.`
+        });
+      }
+      user.mobile = targetMobile;
+    }
+
+    if (password && password.trim().length >= 4) {
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(password.trim(), salt);
+    }
+
+    if (vehicleType) {
+      let vType = (vehicleType || 'bike').toLowerCase().trim();
+      if (vType.includes('scooter') || vType.includes('ev') || vType.includes('electric')) {
+        vType = 'scooter';
+      } else if (vType.includes('cycle') || vType.includes('bicycle')) {
+        vType = 'cycle';
+      } else if (vType.includes('bike') || vType.includes('motor')) {
+        vType = 'bike';
+      } else {
+        vType = 'other';
+      }
+      user.vehicleType = vType;
+    }
+
+    if (vehicleNumber !== undefined) {
+      user.vehicleNumber = (vehicleNumber || '').toUpperCase().trim();
+    }
+
+    if (isActive !== undefined) {
+      user.isActive = Boolean(isActive);
+    }
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `Delivery partner ${user.name} updated successfully!`,
+      data: sanitizeUser(user)
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

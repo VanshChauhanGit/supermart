@@ -16,6 +16,24 @@ export default function CustomerStorefront({ products = [], loading = false, onO
   const [pincode, setPincode] = useState('110001');
   const [paymentMethod, setPaymentMethod] = useState('COD');
   const [orderSuccess, setOrderSuccess] = useState(null);
+  const [storeSettings, setStoreSettings] = useState({
+    deliveryFee: 30,
+    freeDeliveryThreshold: 300
+  });
+
+  useEffect(() => {
+    fetch('/api/v1/settings')
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && res.data) {
+          setStoreSettings({
+            deliveryFee: Number(res.data.deliveryFee ?? 30),
+            freeDeliveryThreshold: Number(res.data.freeDeliveryThreshold ?? 300)
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const categories = [
     'ALL',
@@ -76,7 +94,10 @@ export default function CustomerStorefront({ products = [], loading = false, onO
   };
 
   const subtotal = cart.reduce((acc, i) => acc + i.total, 0);
-  const deliveryFee = subtotal > 300 ? 0 : 30;
+  const baseDeliveryFee = Number(storeSettings.deliveryFee ?? 30);
+  const freeThreshold = Number(storeSettings.freeDeliveryThreshold ?? 300);
+  const isFreeDelivery = baseDeliveryFee === 0 || subtotal >= freeThreshold;
+  const deliveryFee = isFreeDelivery ? 0 : baseDeliveryFee;
   const grandTotal = subtotal + deliveryFee;
 
   const handleSubmitOrder = async (e) => {
@@ -233,7 +254,24 @@ export default function CustomerStorefront({ products = [], loading = false, onO
                   <span className="font-bold">₹{item.total}</span>
                 </div>
               ))}
-              <div className="border-t border-slate-200 pt-1.5 mt-1.5 flex justify-between text-sm font-black text-slate-900">
+              <div className="border-t border-slate-200 pt-2 mt-2 space-y-1 text-xs text-slate-600">
+                <div className="flex justify-between">
+                  <span>Items Subtotal:</span>
+                  <span className="font-semibold text-slate-800">₹{subtotal}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Delivery Fee:</span>
+                  <span className={deliveryFee === 0 ? "font-bold text-emerald-600" : "font-semibold text-slate-800"}>
+                    {deliveryFee === 0 ? "FREE" : `₹${deliveryFee}`}
+                  </span>
+                </div>
+                {baseDeliveryFee > 0 && !isFreeDelivery && (
+                  <div className="text-[10px] text-amber-700 bg-amber-50 rounded-md px-2 py-1 border border-amber-200">
+                    Add ₹{freeThreshold - subtotal} more items to get FREE Delivery!
+                  </div>
+                )}
+              </div>
+              <div className="border-t border-slate-200 pt-2 mt-2 flex justify-between text-sm font-black text-slate-900">
                 <span>Total Amount:</span>
                 <span className="text-[#28469E]">₹{grandTotal}</span>
               </div>
@@ -269,7 +307,6 @@ export default function CustomerStorefront({ products = [], loading = false, onO
               className="input-field mb-4"
             >
               <option value="COD">Cash on Delivery (COD)</option>
-              <option value="ONLINE_UPI">Pay Online via UPI QR</option>
             </select>
 
             <div className="flex gap-2">

@@ -138,7 +138,7 @@ export default function CustomerProfileScreen() {
                 borderColor: '#E2E8F0',
               }}>
                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#334155' }}>
-                  📞 +91 {customerUser?.phone || '9876543210'}
+                  📞 +91 {customerUser?.phone || customerUser?.mobile || '9876543210'}
                 </Text>
               </View>
             </View>

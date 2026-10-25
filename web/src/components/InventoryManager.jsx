@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Package, Plus, Search, Filter, AlertTriangle, Edit3, Trash2, 
   Download, Upload, Barcode, CheckCircle, ExternalLink, Image as ImageIcon 
@@ -86,7 +86,7 @@ export default function InventoryManager({ products, onRefreshProducts }) {
 
   const [newImageInput, setNewImageInput] = useState('');
 
-  const categories = [
+  const [categories, setCategories] = useState([
     'ALL',
     'Grocery & Atta',
     'Dairy & Fresh',
@@ -96,7 +96,22 @@ export default function InventoryManager({ products, onRefreshProducts }) {
     'Kitchenware',
     'Stationery',
     'General Merchandise'
-  ];
+  ]);
+
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch('/api/v1/categories');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        const catNames = data.data.filter(c => c.isActive !== false).map(c => c.name);
+        setCategories(['ALL', ...new Set(catNames)]);
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
 
   const handleSearchChange = (val) => {
     setSearchTerm(val);

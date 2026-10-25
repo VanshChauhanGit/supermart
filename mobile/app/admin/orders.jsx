@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, RefreshControl,
   Alert, ScrollView, StatusBar, Linking, Modal, TextInput,
-  Keyboard, KeyboardAvoidingView, Platform
+  Keyboard, KeyboardAvoidingView, Platform, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../../context/AppContext';
@@ -42,24 +43,28 @@ export default function AdminOrdersScreen() {
   const [selectedOrderToDispatch, setSelectedOrderToDispatch] = useState(null);
   const [showDispatchModal, setShowDispatchModal] = useState(false);
 
-  // Fleet Management Modal State (Create Delivery Boy)
+  // Fleet Management Modal State (Create & Manage Delivery Boys)
   const [showFleetModal, setShowFleetModal] = useState(false);
+  const [editingBoy, setEditingBoy] = useState(null);
   const [newBoyName, setNewBoyName] = useState('');
   const [newBoyPhone, setNewBoyPhone] = useState('');
   const [newBoyPassword, setNewBoyPassword] = useState('');
+  const [showBoyPassword, setShowBoyPassword] = useState(false);
   const [newBoyVehicle, setNewBoyVehicle] = useState('bike');
   const [newBoyVehicleNo, setNewBoyVehicleNo] = useState('');
   const [savingBoy, setSavingBoy] = useState(false);
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     try {
       const res = await fetch(`${apiBaseUrl}/orders`);
       const data = await res.json();
-      if (data.success) setOrders(data.data);
+      if (data.success && Array.isArray(data.data)) {
+        setOrders(data.data);
+      }
     } catch (e) {}
-  };
+  }, [apiBaseUrl]);
 
-  const fetchDeliveryBoys = async () => {
+  const fetchDeliveryBoys = useCallback(async () => {
     try {
       const res = await fetch(`${apiBaseUrl}/auth/admin/delivery-boys`);
       const data = await res.json();
@@ -67,7 +72,15 @@ export default function AdminOrdersScreen() {
         setDeliveryBoys(data.data);
       }
     } catch (e) {}
-  };
+  }, [apiBaseUrl]);
+
+  // Automatically refresh orders and fleet members whenever Admin Orders tab is opened
+  useFocusEffect(
+    useCallback(() => {
+      fetchOrders();
+      fetchDeliveryBoys();
+    }, [fetchOrders, fetchDeliveryBoys])
+  );
 
   useEffect(() => {
     fetchOrders();
@@ -91,7 +104,7 @@ export default function AdminOrdersScreen() {
         socket.off('orderStatusUpdate', handleStatusUpdate);
       };
     }
-  }, [socket]);
+  }, [socket, fetchOrders, fetchDeliveryBoys]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -126,47 +139,120 @@ export default function AdminOrdersScreen() {
     }
   };
 
-  // Create New Delivery Boy Account (Store Owner Only)
-  const handleCreateDeliveryBoy = async () => {
-    if (!newBoyName.trim() || !newBoyPhone.trim() || !newBoyPassword.trim()) {
+  // Create / Edit Delivery Boy Account (Store Owner Only)
+  const handleSaveDeliveryBoy = async () => {
+    if (!newBoyName.trim() || !newBoyPhone.trim() || (!editingBoy && !newBoyPassword.trim())) {
       Alert.alert('Required Fields', 'Please enter delivery partner name, 10-digit mobile number, and login password.');
       return;
     }
 
-    if (newBoyPhone.trim().length !== 10) {
+    if (newBoyPhone.replace(/\D/g, '').length !== 10) {
       Alert.alert('Invalid Mobile', 'Please provide a valid 10-digit mobile number.');
       return;
     }
 
     setSavingBoy(true);
     try {
-      const res = await fetch(`${apiBaseUrl}/auth/admin/delivery-boys`, {
-        method: 'POST',
+      const url = editingBoy
+        ? `${apiBaseUrl}/auth/admin/delivery-boys/${editingBoy._id}`
+        : `${apiBaseUrl}/auth/admin/delivery-boys`;
+      const method = editingBoy ? 'PUT' : 'POST';
+
+      const payload = {
+        name: newBoyName.trim(),
+        mobile: newBoyPhone.replace(/\D/g, '').slice(0, 10),
+        vehicleType: newBoyVehicle,
+        vehicleNumber: newBoyVehicleNo.trim()
+      };
+      if (newBoyPassword.trim()) {
+        payload.password = newBoyPassword.trim();
+      }
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newBoyName.trim(),
-          mobile: newBoyPhone.trim(),
-          password: newBoyPassword.trim(),
-          vehicleType: newBoyVehicle,
-          vehicleNumber: newBoyVehicleNo.trim()
-        })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.success) {
-        Alert.alert('Fleet Member Created! 🛵', `Delivery Boy account for ${newBoyName} is ready. They can now login with their phone and password.`);
+        Alert.alert(
+          editingBoy ? 'Partner Updated! ✅' : 'Fleet Member Created! 🛵',
+          editingBoy
+            ? `Delivery Partner ${newBoyName} has been updated.`
+            : `Delivery Boy account for ${newBoyName} is ready. They can now login with their phone and password.`
+        );
+        setEditingBoy(null);
         setNewBoyName('');
         setNewBoyPhone('');
         setNewBoyPassword('');
         setNewBoyVehicleNo('');
+        setShowBoyPassword(false);
         fetchDeliveryBoys();
       } else {
-        Alert.alert('Creation Failed', data.message || 'Could not register delivery boy.');
+        Alert.alert('Operation Failed', data.message || 'Could not save delivery boy.');
       }
     } catch (e) {
-      Alert.alert('Network Error', 'Could not create delivery boy account.');
+      Alert.alert('Network Error', 'Could not save delivery boy account.');
     } finally {
       setSavingBoy(false);
     }
+  };
+
+  const startEditBoy = (boy) => {
+    setEditingBoy(boy);
+    setNewBoyName(boy.name || '');
+    setNewBoyPhone(boy.mobile || '');
+    setNewBoyPassword('');
+    setShowBoyPassword(false);
+    setNewBoyVehicle(boy.vehicleType || 'bike');
+    setNewBoyVehicleNo(boy.vehicleNumber || '');
+  };
+
+  const cancelEditBoy = () => {
+    setEditingBoy(null);
+    setNewBoyName('');
+    setNewBoyPhone('');
+    setNewBoyPassword('');
+    setShowBoyPassword(false);
+    setNewBoyVehicle('bike');
+    setNewBoyVehicleNo('');
+  };
+
+  const handleDeleteDeliveryBoy = (boy) => {
+    if (boy.isBusy) {
+      Alert.alert('Cannot Delete', `${boy.name} is currently out on delivery for Order #${boy.activeOrder?.orderNo}.`);
+      return;
+    }
+
+    Alert.alert(
+      'Delete Delivery Partner',
+      `Are you sure you want to delete ${boy.name} (+91 ${boy.mobile})?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await fetch(`${apiBaseUrl}/auth/admin/delivery-boys/${boy._id}`, {
+                method: 'DELETE'
+              });
+              const data = await res.json();
+              if (data.success) {
+                if (editingBoy?._id === boy._id) {
+                  cancelEditBoy();
+                }
+                fetchDeliveryBoys();
+              } else {
+                Alert.alert('Delete Failed', data.message || 'Could not delete delivery partner.');
+              }
+            } catch (e) {
+              Alert.alert('Error', 'Failed to delete partner.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleConfirmCancel = async () => {
@@ -647,7 +733,7 @@ export default function AdminOrdersScreen() {
                             {boy.name}
                           </Text>
                           <Text className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                            +91 {boy.mobile} • {boy.vehicleType || 'Bike'} {boy.vehicleNumber ? `(${boy.vehicleNumber})` : ''}
+                            +91 {boy.mobile}{boy.vehicleNumber ? ` • ${boy.vehicleNumber}` : ''}
                           </Text>
                         </View>
                       </View>
@@ -738,62 +824,96 @@ export default function AdminOrdersScreen() {
 
             <ScrollView showsVerticalScrollIndicator={false}>
               
-              {/* ── 1. Create New Delivery Partner Form ── */}
+              {/* ── 1. Create / Edit Delivery Partner Form ── */}
               <View className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-4">
-                <Text className="text-xs font-black text-slate-900 uppercase tracking-wide mb-2.5">
-                  + Add New Delivery Boy Account
-                </Text>
+                <View className="flex-row items-center justify-between mb-2.5">
+                  <Text className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                    {editingBoy ? `✏️ Edit ${editingBoy.name}` : '+ Add New Delivery Boy Account'}
+                  </Text>
+                  {editingBoy ? (
+                    <TouchableOpacity onPress={cancelEditBoy} className="bg-slate-200 px-2 py-0.5 rounded-lg">
+                      <Text className="text-[10px] font-bold text-slate-700">Cancel Edit</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
 
                 {/* Name */}
-                <Text className="text-[11px] font-bold text-slate-600 mb-1">Full Name</Text>
+                <Text className="text-[11px] font-black text-slate-700 mb-1">Full Name *</Text>
                 <TextInput
-                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold mb-2.5 text-slate-900"
+                  className="bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-bold mb-3 text-slate-900"
                   placeholder="e.g. Ramesh Kumar"
+                  placeholderTextColor="#94A3B8"
                   value={newBoyName}
                   onChangeText={setNewBoyName}
                 />
 
                 {/* Phone */}
-                <Text className="text-[11px] font-bold text-slate-600 mb-1">Mobile Number (10 digits)</Text>
+                <Text className="text-[11px] font-black text-slate-700 mb-1">Mobile Number (10 digits) *</Text>
                 <TextInput
-                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-black mb-2.5 text-slate-900"
+                  className="bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-black mb-3 text-slate-900"
                   placeholder="e.g. 9876500001"
-                  keyboardType="numeric"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="phone-pad"
                   maxLength={10}
                   value={newBoyPhone}
-                  onChangeText={setNewBoyPhone}
+                  onChangeText={(t) => setNewBoyPhone(t.replace(/\D/g, '').slice(0, 10))}
                 />
 
-                {/* Password */}
-                <Text className="text-[11px] font-bold text-slate-600 mb-1">Login Password</Text>
-                <TextInput
-                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold mb-2.5 text-slate-900"
-                  placeholder="Set rider app password"
-                  secureTextEntry
-                  value={newBoyPassword}
-                  onChangeText={setNewBoyPassword}
-                />
+                {/* Password with Eye toggle */}
+                <View className="flex-row items-center justify-between mb-1">
+                  <Text className="text-[11px] font-black text-slate-700">
+                    {editingBoy ? 'New Password (Optional)' : 'Login Password *'}
+                  </Text>
+                  {editingBoy ? (
+                    <Text className="text-[10px] text-slate-400 font-semibold">Leave blank to keep current</Text>
+                  ) : null}
+                </View>
+                <View className="flex-row items-center bg-white border border-slate-300 rounded-xl px-3.5 py-1 mb-3">
+                  <TextInput
+                    className="flex-1 text-xs font-bold text-slate-900 py-1.5"
+                    placeholder={editingBoy ? "Enter new password" : "Set rider app password"}
+                    placeholderTextColor="#94A3B8"
+                    secureTextEntry={!showBoyPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    value={newBoyPassword}
+                    onChangeText={setNewBoyPassword}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowBoyPassword(!showBoyPassword)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    className="p-1"
+                  >
+                    <Ionicons
+                      name={showBoyPassword ? "eye-off-outline" : "eye-outline"}
+                      size={18}
+                      color="#1E3A8A"
+                    />
+                  </TouchableOpacity>
+                </View>
 
-                {/* Vehicle No */}
-                <Text className="text-[11px] font-bold text-slate-600 mb-1">Vehicle Plate No (Optional)</Text>
+                {/* Vehicle Plate No */}
+                <Text className="text-[11px] font-black text-slate-700 mb-1">Vehicle Plate No (Optional)</Text>
                 <TextInput
-                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold mb-3 text-slate-900"
+                  className="bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-bold mb-3 text-slate-900"
                   placeholder="e.g. DL-01-AB-1234"
+                  placeholderTextColor="#94A3B8"
+                  autoCapitalize="characters"
                   value={newBoyVehicleNo}
                   onChangeText={setNewBoyVehicleNo}
                 />
 
                 <TouchableOpacity
-                  onPress={handleCreateDeliveryBoy}
+                  onPress={handleSaveDeliveryBoy}
                   disabled={savingBoy}
                   activeOpacity={0.85}
-                  className="w-full bg-[#1E3A8A] rounded-xl py-3 items-center justify-center shadow-xs"
+                  className="w-full bg-[#1E3A8A] rounded-xl py-3.5 items-center justify-center shadow-xs"
                 >
                   {savingBoy ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text className="text-white font-black text-xs">
-                      CREATE DELIVERY BOY ACCOUNT
+                    <Text className="text-white font-black text-xs uppercase tracking-wider">
+                      {editingBoy ? 'SAVE PARTNER CHANGES' : 'CREATE DELIVERY BOY ACCOUNT'}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -807,28 +927,51 @@ export default function AdminOrdersScreen() {
               {deliveryBoys.map(boy => (
                 <View
                   key={boy._id}
-                  className="bg-white border border-slate-200 rounded-2xl p-3 mb-2 flex-row items-center justify-between"
+                  className="bg-white border border-slate-200 rounded-2xl p-3.5 mb-2.5 shadow-xs"
                 >
-                  <View className="flex-row items-center flex-1 mr-2">
-                    <View className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center mr-2.5">
-                      <Ionicons name="person" size={16} color="#1E3A8A" />
+                  <View className="flex-row items-start justify-between">
+                    <View className="flex-row items-center flex-1 mr-2">
+                      <View className="w-9 h-9 rounded-full bg-amber-100 items-center justify-center mr-2.5 border border-amber-200">
+                        <Ionicons name="bicycle" size={18} color="#B45309" />
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-xs font-black text-slate-900">{boy.name}</Text>
+                        <Text className="text-[11px] font-bold text-slate-500">
+                          +91 {boy.mobile}{boy.vehicleNumber ? ` • ${boy.vehicleNumber}` : ''}
+                        </Text>
+                      </View>
                     </View>
-                    <View className="flex-1">
-                      <Text className="text-xs font-black text-slate-900">{boy.name}</Text>
-                      <Text className="text-[10px] font-semibold text-slate-500">
-                        +91 {boy.mobile} • {boy.vehicleType || 'Bike'} {boy.vehicleNumber || ''}
+
+                    <View className={`px-2 py-0.5 rounded-full ${
+                      boy.isBusy ? 'bg-rose-100' : 'bg-emerald-100'
+                    }`}>
+                      <Text className={`text-[9px] font-black uppercase ${
+                        boy.isBusy ? 'text-rose-800' : 'text-emerald-800'
+                      }`}>
+                        {boy.isBusy ? `Delivering #${boy.activeOrder?.orderNo}` : 'Available'}
                       </Text>
                     </View>
                   </View>
 
-                  <View className={`px-2 py-0.5 rounded-full ${
-                    boy.isBusy ? 'bg-rose-100' : 'bg-emerald-100'
-                  }`}>
-                    <Text className={`text-[9px] font-black uppercase ${
-                      boy.isBusy ? 'text-rose-800' : 'text-emerald-800'
-                    }`}>
-                      {boy.isBusy ? `Delivering #${boy.activeOrder?.orderNo}` : 'Available'}
-                    </Text>
+                  {/* Edit and Delete Buttons Bar */}
+                  <View className="flex-row items-center justify-end gap-2 pt-2.5 mt-2.5 border-t border-slate-100">
+                    <TouchableOpacity
+                      onPress={() => startEditBoy(boy)}
+                      activeOpacity={0.7}
+                      className="bg-blue-50 border border-blue-200 px-3 py-1 rounded-xl flex-row items-center"
+                    >
+                      <Ionicons name="create-outline" size={12} color="#1E3A8A" style={{ marginRight: 4 }} />
+                      <Text className="text-[10px] font-black text-[#1E3A8A]">Edit</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => handleDeleteDeliveryBoy(boy)}
+                      activeOpacity={0.7}
+                      className="bg-rose-50 border border-rose-200 px-3 py-1 rounded-xl flex-row items-center"
+                    >
+                      <Ionicons name="trash-outline" size={12} color="#DC2626" style={{ marginRight: 4 }} />
+                      <Text className="text-[10px] font-black text-rose-600">Delete</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               ))}

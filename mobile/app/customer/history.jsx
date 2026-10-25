@@ -14,8 +14,9 @@ export default function CustomerHistoryScreen() {
       const oRes = await fetch(`${apiBaseUrl}/orders`);
       const oData = await oRes.json();
       if (oData.success) {
+        const myPhone = customerUser?.phone || customerUser?.mobile;
         const myOrders = oData.data.filter(o => 
-          o.phone === customerUser?.phone || o.customerName === customerUser?.name
+          (myPhone && o.phone === myPhone) || (customerUser?.name && o.customerName === customerUser.name)
         );
         setOrders(myOrders);
       }
@@ -23,8 +24,9 @@ export default function CustomerHistoryScreen() {
       const cRes = await fetch(`${apiBaseUrl}/customers`);
       const cData = await cRes.json();
       if (cData.success) {
+        const myPhone = customerUser?.phone || customerUser?.mobile;
         const found = cData.data.find(c => 
-          c.phone === customerUser?.phone || c.name.toLowerCase() === customerUser?.name.toLowerCase()
+          (myPhone && c.phone === myPhone) || (customerUser?.name && c.name?.toLowerCase() === customerUser.name.toLowerCase())
         );
         if (found) {
           const dtRes = await fetch(`${apiBaseUrl}/customers/${found._id}`);
@@ -72,7 +74,7 @@ export default function CustomerHistoryScreen() {
             {customerUser?.fatherName ? (
               <Text className="text-xs font-bold text-[#28469E] mt-0.5">S/O: {customerUser.fatherName}</Text>
             ) : null}
-            <Text className="text-xs text-slate-500 font-medium mt-0.5">📞 +91-{customerUser?.phone || '9876543210'}</Text>
+            <Text className="text-xs text-slate-500 font-medium mt-0.5">📞 +91-{customerUser?.phone || customerUser?.mobile || '9876543210'}</Text>
           </View>
         </View>
 

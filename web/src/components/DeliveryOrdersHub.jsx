@@ -857,9 +857,9 @@ export default function DeliveryOrdersHub() {
                         <div>
                           <div className="font-extrabold text-slate-900 flex items-center gap-2">
                             <span>{boy.name}</span>
-                            {boy.vehicleType && (
-                              <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.2 rounded">
-                                {boy.vehicleType} {boy.vehicleNumber ? `(${boy.vehicleNumber})` : ''}
+                            {boy.vehicleNumber && (
+                              <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.2 rounded uppercase">
+                                {boy.vehicleNumber}
                               </span>
                             )}
                           </div>
@@ -1027,8 +1027,8 @@ export default function DeliveryOrdersHub() {
                             </div>
                             <div className="text-[11px] text-slate-500 font-medium flex items-center gap-2 mt-0.5">
                               <span>Phone: +91 {boy.mobile}</span>
-                              {boy.vehicleType && (
-                                <span className="text-slate-400">· {boy.vehicleType} {boy.vehicleNumber ? `(${boy.vehicleNumber})` : ''}</span>
+                              {boy.vehicleNumber && (
+                                <span className="text-slate-400">· {boy.vehicleNumber}</span>
                               )}
                             </div>
                             {boy.isBusy && boy.activeOrder?.orderNo && (
@@ -1106,32 +1106,15 @@ export default function DeliveryOrdersHub() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Vehicle Type</label>
-                      <select
-                        value={newBoy.vehicleType}
-                        onChange={(e) => setNewBoy({ ...newBoy, vehicleType: e.target.value })}
-                        className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-violet-600"
-                      >
-                        <option value="Bike">Motorcycle</option>
-                        <option value="Scooter">Scooter</option>
-                        <option value="Electric Scooter">EV Scooter</option>
-                        <option value="Bicycle">Bicycle</option>
-                        <option value="On Foot">On Foot</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Vehicle No. (Opt)</label>
-                      <input
-                        type="text"
-                        placeholder="MH 12 AB 1234"
-                        value={newBoy.vehicleNumber}
-                        onChange={(e) => setNewBoy({ ...newBoy, vehicleNumber: e.target.value })}
-                        className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-violet-600 uppercase"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Vehicle No. (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. DL 01 AB 1234"
+                      value={newBoy.vehicleNumber}
+                      onChange={(e) => setNewBoy({ ...newBoy, vehicleNumber: e.target.value })}
+                      className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-violet-600 uppercase"
+                    />
                   </div>
 
                   <button

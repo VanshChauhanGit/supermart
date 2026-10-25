@@ -82,6 +82,50 @@ export function AppProvider({ children }) {
   const [apiBaseUrl, setApiBaseUrl] = useState(getDefaultApiUrl());
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
   const [socket, setSocket] = useState(null);
+  const [storeSettings, setStoreSettings] = useState({
+    deliveryFee: 30,
+    freeDeliveryThreshold: 300,
+    paymentQrUrl: '',
+    upiId: '',
+  });
+
+  const fetchStoreSettings = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBaseUrl}/settings`);
+      const data = await res.json();
+      if (data?.success && data?.data) {
+        setStoreSettings({
+          deliveryFee: Number(data.data.deliveryFee ?? 30),
+          freeDeliveryThreshold: Number(data.data.freeDeliveryThreshold ?? 300),
+          paymentQrUrl: data.data.paymentQrUrl || '',
+          upiId: data.data.upiId || '',
+        });
+      }
+    } catch (e) { }
+  }, [apiBaseUrl]);
+
+  const updateStoreSettings = useCallback(async (newSettings) => {
+    try {
+      const res = await fetch(`${apiBaseUrl}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSettings),
+      });
+      const data = await res.json();
+      if (data?.success && data?.data) {
+        setStoreSettings({
+          deliveryFee: Number(data.data.deliveryFee ?? 30),
+          freeDeliveryThreshold: Number(data.data.freeDeliveryThreshold ?? 300),
+          paymentQrUrl: data.data.paymentQrUrl || '',
+          upiId: data.data.upiId || '',
+        });
+        return { success: true, data: data.data };
+      }
+      return { success: false, error: data?.error || 'Failed to update settings' };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }, [apiBaseUrl]);
 
   useEffect(() => {
     // Connect to Socket.IO server
@@ -91,6 +135,30 @@ export function AppProvider({ children }) {
 
     return () => newSocket.disconnect();
   }, [apiBaseUrl]);
+
+  // Listen for real-time settings updates
+  useEffect(() => {
+    if (!socket) return;
+    const handleSettingsUpdate = (updated) => {
+      if (updated) {
+        setStoreSettings({
+          deliveryFee: Number(updated.deliveryFee ?? 30),
+          freeDeliveryThreshold: Number(updated.freeDeliveryThreshold ?? 300),
+          paymentQrUrl: updated.paymentQrUrl || '',
+          upiId: updated.upiId || '',
+        });
+      }
+    };
+    socket.on('settings:updated', handleSettingsUpdate);
+    return () => {
+      socket.off('settings:updated', handleSettingsUpdate);
+    };
+  }, [socket]);
+
+  // Initial fetch of store settings
+  useEffect(() => {
+    fetchStoreSettings();
+  }, [fetchStoreSettings]);
 
   // Restore session on startup — check token expiry locally
   useEffect(() => {
@@ -104,8 +172,10 @@ export function AppProvider({ children }) {
 
         if (savedCustomer) {
           if (savedToken && isTokenValid(savedToken)) {
-            // Token is still valid — restore the session
-            setCustomerUser(JSON.parse(savedCustomer));
+            // Token is still valid — restore the session with normalized phone/mobile
+            const parsed = JSON.parse(savedCustomer);
+            const userPhone = parsed?.phone || parsed?.mobile || '';
+            setCustomerUser({ ...parsed, phone: userPhone, mobile: userPhone });
             setCustomerToken(savedToken);
           } else {
             // Token is expired or missing — clear session, force re-login
@@ -187,10 +257,12 @@ export function AppProvider({ children }) {
     // 2. Unregister device push token from admin/delivery alerts
     unregisterPushTokenAsync(apiBaseUrl).catch(() => {});
 
-    // 3. Set Customer session
-    setCustomerUser(user);
+    // 3. Set Customer session with normalized phone and mobile
+    const userPhone = user?.phone || user?.mobile || '';
+    const normalizedUser = user ? { ...user, phone: userPhone, mobile: userPhone } : null;
+    setCustomerUser(normalizedUser);
     setCustomerToken(token || null);
-    await storage.setItem("supermart_mobile_customer", JSON.stringify(user));
+    await storage.setItem("supermart_mobile_customer", JSON.stringify(normalizedUser));
     if (token) {
       await storage.setItem("supermart_mobile_customer_token", token);
     }
@@ -304,6 +376,9 @@ export function AppProvider({ children }) {
       setApiBaseUrl,
       isAuthLoaded,
       socket,
+      storeSettings,
+      updateStoreSettings,
+      fetchStoreSettings,
     }),
     [
       cart,
@@ -324,6 +399,9 @@ export function AppProvider({ children }) {
       apiBaseUrl,
       isAuthLoaded,
       socket,
+      storeSettings,
+      updateStoreSettings,
+      fetchStoreSettings,
     ],
   );
 

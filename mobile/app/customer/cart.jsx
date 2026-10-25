@@ -16,11 +16,10 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useApp } from '../../context/AppContext';
-import AllInOneSDKManager from 'paytm_allinone_react-native';
 
 export default function CustomerCartScreen() {
   const insets = useSafeAreaInsets();
-  const { cart, updateCartQty, clearCart, customerUser, apiBaseUrl } = useApp();
+  const { cart, updateCartQty, clearCart, customerUser, apiBaseUrl, storeSettings } = useApp();
 
   const [address, setAddress] = useState(customerUser?.address || '');
   const [pincode, setPincode] = useState(customerUser?.pincode || '');
@@ -28,7 +27,7 @@ export default function CustomerCartScreen() {
   const [coords, setCoords] = useState(null); // { latitude: Number, longitude: Number }
   const [isLocating, setIsLocating] = useState(true);
   const [locationError, setLocationError] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState('COD');
+  const paymentMethod = 'COD';
   const [submitting, setSubmitting] = useState(false);
 
   const [promoCode, setPromoCode] = useState('');
@@ -119,16 +118,17 @@ export default function CustomerCartScreen() {
   const mrpSavings = Math.max(0, totalMrp - subtotal);
   const cartTotalCount = cart.reduce((acc, i) => acc + i.quantity, 0);
 
-  const FREE_DELIVERY_THRESHOLD = 300;
-  const isFreeDeliveryQualified = subtotal >= FREE_DELIVERY_THRESHOLD;
-  const baseDeliveryFee = isFreeDeliveryQualified ? 0 : 30;
+  const FREE_DELIVERY_THRESHOLD = Number(storeSettings?.freeDeliveryThreshold ?? 300);
+  const BASE_DELIVERY_FEE = Number(storeSettings?.deliveryFee ?? 30);
+  const isFreeDeliveryQualified = BASE_DELIVERY_FEE === 0 || subtotal >= FREE_DELIVERY_THRESHOLD;
+  const baseDeliveryFee = isFreeDeliveryQualified ? 0 : BASE_DELIVERY_FEE;
 
   const currentDeliveryFee = appliedPromo && appliedPromo.deliveryFee !== undefined
     ? appliedPromo.deliveryFee
     : baseDeliveryFee;
 
   const grandTotal = Math.max(0, subtotal + currentDeliveryFee - discountAmount);
-  const totalSavings = mrpSavings + discountAmount + (isFreeDeliveryQualified ? 30 : 0);
+  const totalSavings = mrpSavings + discountAmount + (isFreeDeliveryQualified && BASE_DELIVERY_FEE > 0 ? BASE_DELIVERY_FEE : 0);
 
   const handleApplyPromo = async (codeToApply) => {
     const targetCode = (typeof codeToApply === 'string' ? codeToApply : promoCode).trim();
@@ -216,8 +216,8 @@ export default function CustomerCartScreen() {
 
     try {
       const payload = {
-        customerName: customerUser ? customerUser.name : 'Walk-in Customer',
-        phone: customerUser ? customerUser.phone : '9876543210',
+        customerName: customerUser ? (customerUser.name || 'Customer') : 'Walk-in Customer',
+        phone: customerUser ? (customerUser.phone || customerUser.mobile || '9876543210') : '9876543210',
         deliveryAddress: address.trim(),
         pincode: pincode.trim(),
         location: {
@@ -253,60 +253,12 @@ export default function CustomerCartScreen() {
       const data = await res.json();
 
       if (data.success) {
-        if (paymentMethod === 'PAYTM') {
-          try {
-            const tokenRes = await fetch(`${apiBaseUrl}/paytm/generate-token`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ orderId: data.data.orderNo, amount: grandTotal })
-            });
-            const tokenData = await tokenRes.json();
-
-            if (tokenData.success) {
-              const mid = "YOUR_PRODUCTION_MID_HERE";
-              const callbackUrl = `https://securegw.paytm.in/theia/paytmCallback?ORDER_ID=${data.data.orderNo}`;
-
-              if (!AllInOneSDKManager) {
-                Alert.alert(
-                  'Expo Go Notice',
-                  'Paytm SDK requires native build. Order created with Cash/UPI on Delivery status.'
-                );
-                clearCart();
-                router.replace('/customer/orders');
-                return;
-              }
-
-              AllInOneSDKManager.startTransaction(
-                data.data.orderNo,
-                mid,
-                tokenData.txnToken,
-                grandTotal.toString(),
-                callbackUrl,
-                true,
-                false
-              ).then(() => {
-                clearCart();
-                Alert.alert('Payment Successful! 🚀', `Your order #${data.data.orderNo} is confirmed for 10-minute express delivery!`);
-                router.replace('/customer/orders');
-              }).catch((err) => {
-                Alert.alert('Payment Incomplete', err.message || "Transaction incomplete. Order logged as Pending.");
-                clearCart();
-                router.replace('/customer/orders');
-              });
-            } else {
-              Alert.alert('Payment Initialization Failed', tokenData.message || 'Could not start payment gateway');
-            }
-          } catch (e) {
-            Alert.alert('Payment Gateway Error', 'Could not connect: ' + e.message);
-          }
-        } else {
-          clearCart();
-          Alert.alert(
-            'Order Placed! 🚀',
-            `Order #${data.data.orderNo} confirmed! Your fresh groceries will arrive in 10-15 minutes.`
-          );
-          router.replace('/customer/orders');
-        }
+        clearCart();
+        Alert.alert(
+          'Order Placed! 🚀',
+          `Order #${data.data.orderNo} confirmed with Cash on Delivery! Your fresh groceries will arrive in 10-15 minutes.`
+        );
+        router.replace('/customer/orders');
       } else {
         Alert.alert('Order Failed', data.message || 'Error creating order');
       }
@@ -393,11 +345,11 @@ export default function CustomerCartScreen() {
                   <View className="flex-row items-center">
                     <Ionicons name="bicycle" size={14} color="#D97706" style={{ marginRight: 5 }} />
                     <Text className="text-[11px] font-bold text-slate-800">
-                      Add <Text className="font-black text-[#D97706]">₹{FREE_DELIVERY_THRESHOLD - subtotal}</Text> more for <Text className="font-black text-emerald-700">FREE Delivery</Text>
+                      Add <Text className="font-black text-[#D97706]">₹{Math.max(0, FREE_DELIVERY_THRESHOLD - subtotal)}</Text> more for <Text className="font-black text-emerald-700">FREE Delivery</Text>
                     </Text>
                   </View>
                   <Text className="text-[10px] font-black text-slate-500">
-                    {Math.round((subtotal / FREE_DELIVERY_THRESHOLD) * 100)}%
+                    {FREE_DELIVERY_THRESHOLD > 0 ? Math.min(100, Math.round((subtotal / FREE_DELIVERY_THRESHOLD) * 100)) : 100}%
                   </Text>
                 </View>
 
@@ -405,7 +357,7 @@ export default function CustomerCartScreen() {
                 <View className="h-1.5 w-full bg-amber-200/70 rounded-full overflow-hidden">
                   <View
                     className="h-full bg-[#F7C400] rounded-full"
-                    style={{ width: `${Math.min(100, Math.round((subtotal / FREE_DELIVERY_THRESHOLD) * 100))}%` }}
+                    style={{ width: `${FREE_DELIVERY_THRESHOLD > 0 ? Math.min(100, Math.round((subtotal / FREE_DELIVERY_THRESHOLD) * 100)) : 100}%` }}
                   />
                 </View>
               </View>
@@ -937,79 +889,31 @@ export default function CustomerCartScreen() {
             </View>
 
             {/* COD Option */}
-            <TouchableOpacity
-              onPress={() => {
-                triggerHaptic();
-                setPaymentMethod('COD');
-              }}
-              activeOpacity={0.8}
-              className={`flex-row items-center p-3 rounded-2xl border mb-2.5 ${
-                paymentMethod === 'COD'
-                  ? 'border-slate-900 bg-amber-50/40'
-                  : 'border-slate-200 bg-[#F8FAFC]'
-              }`}
+            <View
+              className="flex-row items-center p-3.5 rounded-2xl border border-slate-900 bg-amber-50/40"
             >
               <View className="w-9 h-9 rounded-xl bg-emerald-100 items-center justify-center mr-3">
                 <Ionicons name="cash-outline" size={19} color="#059669" />
               </View>
 
               <View className="flex-1">
-                <Text className="text-xs font-black text-slate-900">
-                  Cash on Delivery
-                </Text>
-                <Text className="text-[10px] font-medium text-slate-500">
-                  Pay cash or UPI upon delivery arrival
-                </Text>
-              </View>
-
-              <View className={`w-5 h-5 rounded-full border items-center justify-center ${
-                paymentMethod === 'COD' ? 'border-slate-900 bg-slate-900' : 'border-slate-300 bg-white'
-              }`}>
-                {paymentMethod === 'COD' && (
-                  <Ionicons name="checkmark" size={12} color="#F7C400" />
-                )}
-              </View>
-            </TouchableOpacity>
-
-            {/* Paytm / UPI Option */}
-            <TouchableOpacity
-              onPress={() => {
-                triggerHaptic();
-                setPaymentMethod('PAYTM');
-              }}
-              activeOpacity={0.8}
-              className={`flex-row items-center p-3 rounded-2xl border ${
-                paymentMethod === 'PAYTM'
-                  ? 'border-slate-900 bg-amber-50/40'
-                  : 'border-slate-200 bg-[#F8FAFC]'
-              }`}
-            >
-              <View className="w-9 h-9 rounded-xl bg-blue-100 items-center justify-center mr-3">
-                <Ionicons name="flash" size={19} color="#2563EB" />
-              </View>
-
-              <View className="flex-1">
                 <View className="flex-row items-center">
                   <Text className="text-xs font-black text-slate-900 mr-2">
-                    Paytm / UPI / Cards
+                    Cash on Delivery (COD)
                   </Text>
-                  <View className="bg-amber-100 px-1.5 py-0.2 rounded">
-                    <Text className="text-[9px] font-black text-amber-800">INSTANT</Text>
+                  <View className="bg-emerald-100 px-1.5 py-0.5 rounded">
+                    <Text className="text-[9px] font-black text-emerald-800">GUARANTEED</Text>
                   </View>
                 </View>
-                <Text className="text-[10px] font-medium text-slate-500">
-                  GPay, PhonePe, Paytm UPI & Cards
+                <Text className="text-[10px] font-medium text-slate-500 mt-0.5">
+                  Pay cash or scanner upon delivery arrival
                 </Text>
               </View>
 
-              <View className={`w-5 h-5 rounded-full border items-center justify-center ${
-                paymentMethod === 'PAYTM' ? 'border-slate-900 bg-slate-900' : 'border-slate-300 bg-white'
-              }`}>
-                {paymentMethod === 'PAYTM' && (
-                  <Ionicons name="checkmark" size={12} color="#F7C400" />
-                )}
+              <View className="w-5 h-5 rounded-full border border-slate-900 bg-slate-900 items-center justify-center">
+                <Ionicons name="checkmark" size={12} color="#F7C400" />
               </View>
-            </TouchableOpacity>
+            </View>
           </View>
 
           {/* ── Section F: Quick Commerce Trust Guarantees ── */}
@@ -1048,13 +952,13 @@ export default function CustomerCartScreen() {
 
               <View className="bg-amber-50 border border-amber-200/80 px-2.5 py-1.5 rounded-xl flex-row items-center">
                 <Ionicons
-                  name={paymentMethod === 'COD' ? 'cash-outline' : 'flash'}
+                  name="cash-outline"
                   size={14}
                   color="#D97706"
                   style={{ marginRight: 4 }}
                 />
                 <Text className="text-xs font-black text-slate-800">
-                  {paymentMethod === 'COD' ? 'Cash on Delivery' : 'Paytm / UPI'}
+                  Cash on Delivery
                 </Text>
               </View>
             </View>

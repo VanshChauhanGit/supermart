@@ -37,30 +37,31 @@ router.post('/', upload.single('image'), async (req, res) => {
     return res.status(400).json({ success: false, message: 'No image uploaded' });
   }
   
-  console.log('Received file:', req.file);
+  const localUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
   try {
-    // Upload to cloudinary with 4:5 portrait aspect ratio as shown in design
     const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: 'supermart/products',
-      transformation: [
-        { width: 800, height: 1000, crop: 'fill', gravity: 'auto' }
-      ]
+      folder: 'supermart/uploads',
+      resource_type: 'image'
     });
     
-    // Delete local file
-    fs.unlinkSync(req.file.path);
+    // Delete local file after successful upload to cloudinary
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
 
-    res.json({ 
+    return res.json({ 
       success: true, 
       imageUrl: result.secure_url,
       publicId: result.public_id
     });
   } catch (error) {
-    console.error('Cloudinary upload error:', error);
-    // Cleanup local file on error - disabled for debugging
-    // if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-    res.status(500).json({ success: false, message: 'Image upload failed' });
+    console.warn('Cloudinary upload error, using local fallback:', error.message || error);
+    // Keep local file and return local URL as fallback
+    return res.json({ 
+      success: true, 
+      imageUrl: localUrl 
+    });
   }
 });
 
@@ -72,20 +73,32 @@ router.post('/base64', async (req, res) => {
 
   try {
     const result = await cloudinary.uploader.upload(image, {
-      folder: 'supermart/products',
-      transformation: [
-        { width: 800, height: 1000, crop: 'fill', gravity: 'auto' }
-      ]
+      folder: 'supermart/uploads',
+      resource_type: 'image'
     });
     
-    res.json({ 
+    return res.json({ 
       success: true, 
       imageUrl: result.secure_url,
       publicId: result.public_id
     });
   } catch (error) {
-    console.error('Cloudinary base64 upload error:', error);
-    res.status(500).json({ success: false, message: 'Image upload failed' });
+    console.warn('Cloudinary base64 upload error, using local fallback:', error.message || error);
+    try {
+      const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+      const filename = `img-${Date.now()}-${Math.round(Math.random() * 1E9)}.jpg`;
+      const filePath = path.join(uploadDir, filename);
+      fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+      
+      const localUrl = `${req.protocol}://${req.get('host')}/uploads/${filename}`;
+      return res.json({
+        success: true,
+        imageUrl: localUrl
+      });
+    } catch (saveError) {
+      console.error('Local fallback write error:', saveError);
+      return res.status(500).json({ success: false, message: 'Image upload failed' });
+    }
   }
 });
 

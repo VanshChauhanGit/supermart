@@ -4,8 +4,8 @@ import { Lock, User, Eye, EyeOff, ShieldCheck, LogIn, AlertCircle, ShoppingBag, 
 export default function AdminLoginModal({ isOpen, onLoginSuccess }) {
   if (!isOpen) return null;
 
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('supermart123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -107,20 +107,6 @@ export default function AdminLoginModal({ isOpen, onLoginSuccess }) {
               <AlertCircle size={18} /> {errorMsg}
             </div>
           )}
-
-          {/* Credentials Info Box */}
-          <div style={{
-            background: '#080d19',
-            border: '1px dashed var(--border-color)',
-            borderRadius: '12px',
-            padding: '12px 14px',
-            fontSize: '0.82rem',
-            color: '#94a3b8',
-            marginBottom: '20px'
-          }}>
-            🔑 <strong>Store Access Credentials:</strong><br />
-            Username: <code style={{ color: '#CAE8E8', fontWeight: 700 }}>admin</code> • Password: <code style={{ color: '#CAE8E8', fontWeight: 700 }}>supermart123</code>
-          </div>
 
           {/* Username */}
           <div style={{ marginBottom: '18px' }}>

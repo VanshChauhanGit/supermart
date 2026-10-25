@@ -16,7 +16,8 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
-  TouchableWithoutFeedback
+  TouchableWithoutFeedback,
+  Image
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -28,7 +29,7 @@ import OrderChimeSound from '../../components/OrderChimeSound';
 
 export default function DeliveryBoyScreen() {
   const insets = useSafeAreaInsets();
-  const { apiBaseUrl, socket, deliveryUser, logoutDelivery, isAuthLoaded } = useApp();
+  const { apiBaseUrl, socket, deliveryUser, logoutDelivery, isAuthLoaded, storeSettings } = useApp();
 
   // Navigation: Only 2 main tabs for delivery partner: 'ORDERS' and 'PROFILE'
   const [mainTab, setMainTab] = useState('ORDERS'); // 'ORDERS' | 'PROFILE'
@@ -39,6 +40,9 @@ export default function DeliveryBoyScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [ordersSubTab, setOrdersSubTab] = useState('ACTIVE'); // 'ACTIVE' | 'COMPLETED'
   const riderName = deliveryUser?.name || 'Delivery Partner';
+
+  // QR Code Modal State (Store UPI QR Scanner)
+  const [selectedOrderForQr, setSelectedOrderForQr] = useState(null);
 
   // OTP Verification Modal State
   const [selectedOrderForOtp, setSelectedOrderForOtp] = useState(null);
@@ -222,6 +226,12 @@ export default function DeliveryBoyScreen() {
     } catch (e) {
       Alert.alert('Error', 'Could not update order status.');
     }
+  };
+
+  // Open Store Payment QR Modal
+  const handleOpenQrModal = (order) => {
+    triggerHaptic();
+    setSelectedOrderForQr(order);
   };
 
   // Open OTP Modal
@@ -600,29 +610,55 @@ export default function DeliveryBoyScreen() {
                   )}
 
                   {isAccepted && (
-                    <TouchableOpacity
-                      onPress={() => handleStartDelivery(item)}
-                      activeOpacity={0.85}
-                      className="bg-violet-600 rounded-2xl py-3.5 px-4 items-center justify-center flex-row shadow-md"
-                    >
-                      <Ionicons name="bicycle" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-                      <Text className="text-white font-black text-sm">
-                        PICK UP & START DELIVERY ➔
-                      </Text>
-                    </TouchableOpacity>
+                    <View className="gap-2">
+                      <TouchableOpacity
+                        onPress={() => handleOpenQrModal(item)}
+                        activeOpacity={0.85}
+                        className="bg-amber-50 border border-amber-300 rounded-2xl py-2.5 px-4 items-center justify-center flex-row"
+                      >
+                        <Ionicons name="qr-code" size={16} color="#B45309" style={{ marginRight: 6 }} />
+                        <Text className="text-amber-900 font-black text-xs uppercase tracking-wider">
+                          View Store Payment QR
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => handleStartDelivery(item)}
+                        activeOpacity={0.85}
+                        className="bg-violet-600 rounded-2xl py-3.5 px-4 items-center justify-center flex-row shadow-md"
+                      >
+                        <Ionicons name="bicycle" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                        <Text className="text-white font-black text-sm">
+                          PICK UP & START DELIVERY ➔
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
 
                   {isOutForDelivery && (
-                    <TouchableOpacity
-                      onPress={() => handleOpenOtpModal(item)}
-                      activeOpacity={0.85}
-                      className="bg-emerald-600 rounded-2xl py-3.5 px-4 items-center justify-center flex-row shadow-md"
-                    >
-                      <Ionicons name="key" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-                      <Text className="text-white font-bold text-md">
-                        ENTER CUSTOMER OTP
-                      </Text>
-                    </TouchableOpacity>
+                    <View className="gap-2.5">
+                      <TouchableOpacity
+                        onPress={() => handleOpenQrModal(item)}
+                        activeOpacity={0.85}
+                        className="bg-amber-500 rounded-2xl py-3.5 px-4 items-center justify-center flex-row shadow-sm"
+                      >
+                        <Ionicons name="qr-code" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                        <Text className="text-white font-black text-sm uppercase tracking-wide">
+                          Show Store Payment QR
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => handleOpenOtpModal(item)}
+                        activeOpacity={0.85}
+                        className="bg-emerald-600 rounded-2xl py-3.5 px-4 items-center justify-center flex-row shadow-md"
+                      >
+                        <Ionicons name="key" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                        <Text className="text-white font-bold text-md">
+                          ENTER CUSTOMER OTP
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
 
                   {isDelivered && (
@@ -726,15 +762,6 @@ export default function DeliveryBoyScreen() {
               Shift & Vehicle Info
             </Text>
 
-            <View className="flex-row items-center justify-between py-2.5 border-b border-slate-100">
-              <View className="flex-row items-center">
-                <Ionicons name="bicycle" size={18} color="#64748B" style={{ marginRight: 10 }} />
-                <Text className="text-xs font-bold text-slate-700">Vehicle Type</Text>
-              </View>
-              <Text className="text-xs font-black text-slate-900 capitalize">
-                {deliveryUser?.vehicleType || 'Motorcycle'}
-              </Text>
-            </View>
 
             <View className="flex-row items-center justify-between py-2.5 border-b border-slate-100">
               <View className="flex-row items-center">
@@ -853,6 +880,122 @@ export default function DeliveryBoyScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* ══════════════════════════════════════════════════════
+          STORE UPI PAYMENT QR MODAL
+          ══════════════════════════════════════════════════════ */}
+      <Modal
+        visible={!!selectedOrderForQr}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedOrderForQr(null)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setSelectedOrderForQr(null)}
+          className="flex-1 bg-black/80 justify-center items-center px-5"
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-200 relative items-center"
+          >
+            {/* Top-Right Quick Close (X) Button */}
+            <TouchableOpacity
+              onPress={() => setSelectedOrderForQr(null)}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-100 items-center justify-center z-10"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="close" size={18} color="#64748B" />
+            </TouchableOpacity>
+
+            {/* Header Badge */}
+            <View className="w-14 h-14 rounded-2xl bg-amber-100 items-center justify-center mb-2 shadow-xs">
+              <Ionicons name="qr-code" size={30} color="#B45309" />
+            </View>
+
+            <Text className="text-xl font-black text-slate-900 text-center">
+              Scan & Pay via UPI
+            </Text>
+            <Text className="text-xs font-semibold text-slate-400 text-center mt-0.5">
+              Mandhaur Supermart Store QR
+            </Text>
+
+            {/* Order Amount To Collect Box */}
+            <View className="bg-emerald-50 border border-emerald-200 rounded-2xl py-2.5 px-4 my-3 w-full items-center">
+              <Text className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">
+                AMOUNT TO COLLECT
+              </Text>
+              <Text className="text-2xl font-black text-emerald-800 mt-0.5">
+                ₹{selectedOrderForQr?.totalAmount}
+              </Text>
+              <Text className="text-[11px] font-bold text-slate-500 mt-0.5">
+                Order #{selectedOrderForQr?.orderNo} • {selectedOrderForQr?.customerName}
+              </Text>
+            </View>
+
+            {/* QR Scanner Display or Fallback */}
+            {storeSettings?.paymentQrUrl ? (
+              <View className="items-center my-1 w-full">
+                <View className="p-3.5 bg-white border-2 border-slate-200 rounded-3xl shadow-sm mb-2 items-center justify-center">
+                  <Image
+                    source={{ uri: storeSettings.paymentQrUrl }}
+                    style={{ width: 200, height: 200, borderRadius: 14 }}
+                    resizeMode="contain"
+                  />
+                </View>
+
+                {storeSettings?.upiId ? (
+                  <View className="bg-slate-100 px-3.5 py-1.5 rounded-full flex-row items-center border border-slate-200 mt-1 mb-2">
+                    <Ionicons name="at" size={13} color="#1E3A8A" style={{ marginRight: 4 }} />
+                    <Text className="text-xs font-mono font-black text-slate-800">
+                      {storeSettings.upiId}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <Text className="text-[11px] font-medium text-slate-400 text-center mt-1 mb-3">
+                  Ask customer to scan using Google Pay, PhonePe, Paytm, or any UPI app.
+                </Text>
+              </View>
+            ) : (
+              <View className="w-full py-6 px-4 rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/60 items-center justify-center my-2">
+                <Ionicons name="alert-circle-outline" size={32} color="#D97706" style={{ marginBottom: 6 }} />
+                <Text className="text-xs font-black text-amber-900 text-center">
+                  Store QR Not Uploaded Yet
+                </Text>
+                <Text className="text-[11px] font-medium text-amber-800 text-center mt-1">
+                  The store owner has not uploaded a UPI QR code yet. Please collect ₹{selectedOrderForQr?.totalAmount} in cash or ask the store admin to upload their QR in store settings.
+                </Text>
+              </View>
+            )}
+
+            {/* If Order is Out for Delivery, option to switch straight to OTP */}
+            {selectedOrderForQr?.status === 'OUT_FOR_DELIVERY' && (
+              <TouchableOpacity
+                onPress={() => {
+                  const ord = selectedOrderForQr;
+                  setSelectedOrderForQr(null);
+                  handleOpenOtpModal(ord);
+                }}
+                activeOpacity={0.85}
+                className="w-full bg-emerald-600 rounded-2xl py-3.5 items-center justify-center mb-2 shadow-sm"
+              >
+                <Text className="text-white font-black text-sm">
+                  PROCEED TO OTP VERIFICATION ➔
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              onPress={() => setSelectedOrderForQr(null)}
+              className="w-full bg-slate-100 rounded-xl py-2.5 items-center"
+            >
+              <Text className="text-slate-600 font-bold text-xs">Close</Text>
+            </TouchableOpacity>
+
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* ══════════════════════════════════════════════════════
           OTP VERIFICATION MODAL

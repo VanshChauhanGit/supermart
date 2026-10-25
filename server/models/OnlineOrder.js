@@ -24,7 +24,7 @@ const onlineOrderSchema = new mongoose.Schema({
   discountCode: { type: String, default: null },
   discountAmount: { type: Number, default: 0 },
   totalAmount: { type: Number, required: true },
-  paymentMethod: { type: String, enum: ['COD', 'ONLINE_UPI'], default: 'COD' },
+  paymentMethod: { type: String, default: 'COD' },
   status: {
     type: String,
     enum: ['PENDING', 'ACCEPTED', 'PACKING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'],

@@ -82,17 +82,27 @@ let memoryOrders = [
 router.get('/', async (req, res) => {
   try {
     const { status } = req.query;
-    let orders;
+    let orders = [];
     try {
       let query = {};
       if (status && status !== 'ALL') query.status = status;
       orders = await OnlineOrder.find(query).sort({ createdAt: -1 });
     } catch (e) {
-      orders = memoryOrders.filter(o => {
-        if (status && status !== 'ALL' && o.status !== status) return false;
+      console.warn('[Orders] DB find error, using memory fallback:', e.message);
+      orders = [];
+    }
+
+    // Merge memory orders if any exist and not already in DB results
+    if (memoryOrders.length > 0) {
+      const dbIds = new Set(orders.map(o => o.orderNo || String(o._id)));
+      const extraMem = memoryOrders.filter(mo => {
+        if (dbIds.has(mo.orderNo) || dbIds.has(String(mo._id))) return false;
+        if (status && status !== 'ALL' && mo.status !== status) return false;
         return true;
       });
+      orders = [...extraMem, ...orders];
     }
+
     res.json({ success: true, count: orders.length, data: orders });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -108,7 +118,8 @@ router.post('/', async (req, res) => {
       paymentMethod, notes, location, estimatedDeliveryMinutes 
     } = req.body;
 
-    const orderNo = 'ORD' + Math.floor(1000 + Math.random() * 9000);
+    // Unique order number using timestamp suffix + random digits to prevent duplicate key errors
+    const orderNo = 'ORD' + Date.now().toString().slice(-5) + Math.floor(100 + Math.random() * 900);
     const deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
 
     const cleanLocation = location ? {
@@ -127,16 +138,16 @@ router.post('/', async (req, res) => {
     try {
       newOrder = await OnlineOrder.create({
         orderNo,
-        customerName,
-        phone,
-        deliveryAddress,
+        customerName: (customerName || 'Customer').trim(),
+        phone: String(phone || '9876543210').trim(),
+        deliveryAddress: (deliveryAddress || 'Store Pickup').trim(),
         pincode: pincode || '110001',
-        items,
-        subtotal: Number(subtotal),
+        items: Array.isArray(items) ? items : [],
+        subtotal: Number(subtotal) || 0,
         deliveryFee: Number(deliveryFee) || 0,
         discountCode: discountCode || null,
         discountAmount: Number(discountAmount) || 0,
-        totalAmount: Number(totalAmount),
+        totalAmount: Number(totalAmount) || 0,
         paymentMethod: paymentMethod || 'COD',
         status: 'PENDING',
         stockDeducted: true,
@@ -152,19 +163,20 @@ router.post('/', async (req, res) => {
         notes: notes || ''
       });
     } catch (e) {
+      console.error('[Orders] Warning: OnlineOrder.create failed, falling back to memoryOrders:', e.message);
       newOrder = {
         _id: 'ord_' + Date.now(),
         orderNo,
-        customerName,
-        phone,
-        deliveryAddress,
+        customerName: (customerName || 'Customer').trim(),
+        phone: String(phone || '9876543210').trim(),
+        deliveryAddress: (deliveryAddress || 'Store Pickup').trim(),
         pincode: pincode || '110001',
-        items,
-        subtotal: Number(subtotal),
+        items: Array.isArray(items) ? items : [],
+        subtotal: Number(subtotal) || 0,
         deliveryFee: Number(deliveryFee) || 0,
         discountCode: discountCode || null,
         discountAmount: Number(discountAmount) || 0,
-        totalAmount: Number(totalAmount),
+        totalAmount: Number(totalAmount) || 0,
         paymentMethod: paymentMethod || 'COD',
         status: 'PENDING',
         stockDeducted: true,
@@ -211,13 +223,27 @@ router.post('/', async (req, res) => {
 router.get('/customer/:phone', async (req, res) => {
   try {
     const rawPhone = req.params.phone;
-    const cleanPhone = rawPhone.replace(/\D/g, '');
-    let orders;
+    let cleanPhone = String(rawPhone || '').replace(/\D/g, '');
+    if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
+      cleanPhone = cleanPhone.slice(2);
+    }
+    let orders = [];
     try {
       orders = await OnlineOrder.find({ phone: { $regex: cleanPhone } }).sort({ createdAt: -1 });
     } catch (e) {
-      orders = memoryOrders.filter(o => o.phone && o.phone.replace(/\D/g, '').includes(cleanPhone));
+      orders = [];
     }
+
+    if (memoryOrders.length > 0) {
+      const dbIds = new Set(orders.map(o => o.orderNo || String(o._id)));
+      const extraMem = memoryOrders.filter(o => {
+        if (dbIds.has(o.orderNo) || dbIds.has(String(o._id))) return false;
+        const oPhone = (o.phone || '').replace(/\D/g, '');
+        return oPhone.includes(cleanPhone);
+      });
+      orders = [...extraMem, ...orders];
+    }
+
     res.json({ success: true, count: orders.length, data: orders });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

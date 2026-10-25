@@ -10,6 +10,7 @@ export default function AdminLoginScreen() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [serverUrlInput, setServerUrlInput] = useState(apiBaseUrl);
   const [showServerConfig, setShowServerConfig] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -56,14 +57,7 @@ export default function AdminLoginScreen() {
         Alert.alert('Login Failed', data.message || 'Invalid admin credentials');
       }
     } catch (e) {
-      if (username.trim() === 'admin' && password.trim() === 'supermart123') {
-        const demoUser = { username: 'admin', role: 'SUPER_ADMIN' };
-        if (loginAdmin) await loginAdmin(demoUser);
-        else setAdminUser(demoUser);
-        router.replace('/admin/dashboard');
-      } else {
-        Alert.alert('Network Error', `Could not reach backend API at ${apiBaseUrl}`);
-      }
+      Alert.alert('Network Error', `Could not reach backend API at ${apiBaseUrl}. Please check your connection.`);
     } finally {
       setLoading(false);
     }
@@ -99,7 +93,7 @@ export default function AdminLoginScreen() {
             </View>
             <Text className="text-2xl font-black text-slate-900 tracking-tight">Store Owner Portal</Text>
             <Text className="text-xs text-slate-500 font-medium text-center mt-1">
-              Secure POS billing, Udhar khata & inventory control
+              Manage store catalog, stock & delivery orders
             </Text>
           </View>
 
@@ -129,23 +123,17 @@ export default function AdminLoginScreen() {
                   className="flex-1 text-sm font-bold text-slate-900"
                   value={password}
                   onChangeText={setPassword}
-                  secureTextEntry
+                  secureTextEntry={!showPassword}
                   placeholder="Enter admin password"
                   placeholderTextColor="#94a3b8"
                 />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} className="p-1 ml-1">
+                  <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={18} color="#64748B" />
+                </TouchableOpacity>
               </View>
             </View>
 
           </View>
-
-          {/* Quick Pill Button */}
-          <TouchableOpacity 
-            onPress={() => { setUsername('admin'); setPassword('supermart123'); }}
-            className="my-3 self-end bg-amber-50 px-3.5 py-1.5 rounded-xl border border-amber-200 flex-row items-center"
-          >
-            <Ionicons name="key-outline" size={13} color="#B45309" style={{ marginRight: 4 }} />
-            <Text className="text-[11px] font-bold text-amber-800">Pre-fill Demo Admin</Text>
-          </TouchableOpacity>
 
           {/* Submit Button */}
           <TouchableOpacity
