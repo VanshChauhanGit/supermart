@@ -492,7 +492,7 @@ export default function AdminProfileScreen() {
                     placeholder="e.g. supermart@okhdfcbank"
                     placeholderTextColor="#94A3B8"
                     autoCapitalize="none"
-                    className="flex-1 text-sm font-bold text-slate-900 py-1"
+                    className="flex-1 text-md font-semibold text-slate-900 py-1"
                   />
                 </View>
 
@@ -604,7 +604,7 @@ export default function AdminProfileScreen() {
                     keyboardType="numeric"
                     placeholder="0"
                     placeholderTextColor="#94A3B8"
-                    className="flex-1 text-base font-black text-slate-900 py-1"
+                    className="flex-1 text-md font-semibold text-slate-900 py-1"
                   />
                 </View>
                 {/* Quick presets for delivery fee */}
@@ -615,7 +615,6 @@ export default function AdminProfileScreen() {
                     { label: '₹20', val: '20' },
                     { label: '₹30', val: '30' },
                     { label: '₹40', val: '40' },
-                    { label: '₹50', val: '50' },
                   ].map(p => (
                     <TouchableOpacity
                       key={p.val}
@@ -641,12 +640,12 @@ export default function AdminProfileScreen() {
                     keyboardType="numeric"
                     placeholder="300"
                     placeholderTextColor="#94A3B8"
-                    className="flex-1 text-base font-black text-slate-900 py-1"
+                    className="flex-1 text-md font-semibold text-slate-900 py-1"
                   />
                 </View>
                 {/* Quick presets for threshold */}
                 <View className="flex-row items-center gap-1.5 mb-6 flex-wrap">
-                  <Text className="text-[10px] font-bold text-slate-400 mr-1">Presets:</Text>
+                  <Text className="text-[10px] font-semibold text-slate-400 mr-1">Presets:</Text>
                   {[
                     { label: '₹199', val: '199' },
                     { label: '₹299', val: '299' },

@@ -40,7 +40,7 @@ export default function CustomerCartScreen() {
   const triggerHaptic = () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch (_e) {}
+    } catch (_e) { }
   };
 
   // Fetch active store offers for quick-apply chips
@@ -53,7 +53,7 @@ export default function CustomerCartScreen() {
           setAvailableOffers(res.data.filter(o => o.isActive));
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return () => { active = false; };
   }, [apiBaseUrl]);
@@ -730,9 +730,8 @@ export default function CustomerCartScreen() {
                 <TouchableOpacity
                   onPress={() => handleApplyPromo(promoCode)}
                   disabled={validatingPromo || !promoCode.trim()}
-                  className={`px-4 py-2 rounded-xl ${
-                    promoCode.trim() ? 'bg-slate-900 active:bg-slate-800' : 'bg-slate-200'
-                  }`}
+                  className={`px-4 py-2 rounded-xl ${promoCode.trim() ? 'bg-slate-900 active:bg-slate-800' : 'bg-slate-200'
+                    }`}
                 >
                   {validatingPromo ? (
                     <ActivityIndicator size="small" color="#F7C400" />
@@ -748,17 +747,15 @@ export default function CustomerCartScreen() {
             {/* Quick Select Offer Chips */}
             {!appliedPromo && (
               <View className="mt-3">
-                <Text className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                {/* <Text className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                   Suggested Coupons:
-                </Text>
+                </Text> */}
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   {(availableOffers.length > 0
                     ? availableOffers
                     : [
-                        { _id: '1', code: 'SUPER50', description: 'Flat ₹50 OFF on orders' },
-                        { _id: '2', code: 'FREEDEL', description: 'Free Express Delivery' },
-                        { _id: '3', code: 'WELCOME10', description: '10% Discount' }
-                      ]
+
+                    ]
                   ).map(offer => (
                     <TouchableOpacity
                       key={offer._id || offer.code}
@@ -992,44 +989,39 @@ export default function CustomerCartScreen() {
               onPress={handlePlaceOrder}
               disabled={submitting || isLocating || !coords?.latitude}
               activeOpacity={0.88}
-              className={`w-full py-3.5 px-4 rounded-2xl flex-row items-center justify-between shadow-xs ${
-                !coords?.latitude || isLocating
+              className={`w-full py-3.5 px-4 rounded-2xl flex-row items-center justify-between shadow-xs ${!coords?.latitude || isLocating
                   ? 'bg-slate-100 border border-slate-200'
                   : 'bg-[#F7C400] active:bg-[#eab308] border border-[#facc15]'
-              }`}
+                }`}
             >
               <View className="flex-row items-center">
-                <View className={`w-8 h-8 rounded-xl items-center justify-center mr-2.5 ${
-                  !coords?.latitude || isLocating ? 'bg-slate-200' : 'bg-white/40'
-                }`}>
+                <View className={`w-8 h-8 rounded-xl items-center justify-center mr-2.5 ${!coords?.latitude || isLocating ? 'bg-slate-200' : 'bg-white/40'
+                  }`}>
                   <Ionicons
                     name="bag-check"
                     size={18}
                     color={!coords?.latitude || isLocating ? '#94A3B8' : '#0F172A'}
                   />
                 </View>
-                <Text className={`text-base font-black tracking-tight ${
-                  !coords?.latitude || isLocating ? 'text-slate-400' : 'text-slate-900'
-                }`}>
+                <Text className={`text-base font-black tracking-tight ${!coords?.latitude || isLocating ? 'text-slate-400' : 'text-slate-900'
+                  }`}>
                   {submitting
                     ? 'Placing Order...'
                     : isLocating
-                    ? 'Detecting Location...'
-                    : !coords?.latitude
-                    ? 'Location Required'
-                    : 'Place Order'}
+                      ? 'Detecting Location...'
+                      : !coords?.latitude
+                        ? 'Location Required'
+                        : 'Place Order'}
                 </Text>
               </View>
 
               {submitting || isLocating ? (
                 <ActivityIndicator size="small" color={!coords?.latitude || isLocating ? '#64748B' : '#0F172A'} />
               ) : (
-                <View className={`flex-row items-center px-3 py-1.5 rounded-xl ${
-                  !coords?.latitude ? 'bg-slate-200' : 'bg-slate-900'
-                }`}>
-                  <Text className={`text-xs font-black mr-1 ${
-                    !coords?.latitude ? 'text-slate-500' : 'text-[#F7C400]'
+                <View className={`flex-row items-center px-3 py-1.5 rounded-xl ${!coords?.latitude ? 'bg-slate-200' : 'bg-slate-900'
                   }`}>
+                  <Text className={`text-xs font-black mr-1 ${!coords?.latitude ? 'text-slate-500' : 'text-[#F7C400]'
+                    }`}>
                     {coords?.latitude ? `₹${grandTotal}` : 'Disabled'}
                   </Text>
                   <Ionicons

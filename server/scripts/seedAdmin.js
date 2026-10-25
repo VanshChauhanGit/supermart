@@ -27,8 +27,8 @@ const parseArgs = () => {
 const args = parseArgs();
 
 const ADMIN_NAME     = args.name     || process.env.ADMIN_NAME     || 'Supermart Owner';
-const ADMIN_MOBILE   = args.mobile   || process.env.ADMIN_MOBILE   || '9999999999';
-const ADMIN_PASSWORD = args.password || process.env.ADMIN_PASSWORD || 'supermart123';
+const ADMIN_MOBILE   = args.mobile   || process.env.ADMIN_MOBILE   || '9719567361';
+const ADMIN_PASSWORD = args.password || process.env.ADMIN_PASSWORD || 'Msupermart@123#';
 const ADMIN_ROLE     = args.role     || 'SUPER_ADMIN';
 
 const seedAdmin = async () => {

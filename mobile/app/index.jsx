@@ -425,7 +425,7 @@ export default function UnifiedAuthScreen() {
                         onChangeText={(t) => { setName(t); clearError(); }}
                         onFocus={() => { setFocusedField('name'); scrollToField(120); }}
                         onBlur={() => setFocusedField(null)}
-                        placeholder="e.g. Vansh Chauhan"
+                        placeholder="Your Name"
                         placeholderTextColor="#94A3B8"
                       />
                     </View>

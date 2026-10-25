@@ -185,7 +185,7 @@ export default function CustomerLoginScreen() {
                     value={name}
                     onChangeText={setName}
                     onFocus={() => scrollToField(60)}
-                    placeholder="e.g. Vansh Chauhan"
+                    placeholder="Your Name"
                     placeholderTextColor="#94a3b8"
                   />
                 </View>
